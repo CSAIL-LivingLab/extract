@@ -1,10 +1,17 @@
 import numpy as np
+from parse import Token
+
+# convenience
+#############
 
 def normalize_cols(M):
   return M.astype(float) / M.sum(axis=0)
 
 def normalize_rows(M):
   return normalize_cols(M.T).T
+
+# supervised parameter estimation
+#################################
 
 def supervised_learn(model,X,Y):
   k, v = len(model.hidden_states), len(model.outputs)
@@ -29,3 +36,14 @@ def supervised_learn(model,X,Y):
   E = normalize_rows(e_count)
 
   return S,T,E
+
+# transformation
+################
+
+def featurize(T, f):
+  X = []
+  for t in T:
+    x = f(t)
+    x.append('end')
+    X.append(x)
+  return X

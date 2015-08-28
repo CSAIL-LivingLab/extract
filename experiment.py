@@ -1,29 +1,10 @@
-class Foo:
-  def __init__(self,a,b,c):
-    self._a = a
-    self._b = b
-    self._c = c
+import sys
+from src.parse import read_data, tokenize, parse_data, featurize
 
-  @property
-  def a(self):
-    return self._a
-
-  @a.setter
-  def a(self, value):
-    self._a = value
-
-  @property
-  def b(self):
-    return self._b
-
-  @b.setter
-  def b(self, value):
-    self._b = value
-
-  @property
-  def c(self):
-    return self._c
-
-  @c.setter
-  def c(self, value):
-    self._c = value
+if __name__ == '__main__':
+  filename = sys.argv[1]
+  raw_data = read_data(filename)
+  tokens = tokenize(raw_data)
+  logical_data = parse_data(tokens)
+  oo = featurize(logical_data)
+  print oo
