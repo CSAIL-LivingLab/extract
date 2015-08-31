@@ -3,7 +3,9 @@ import numpy as np
 # linear algebra utility functions
 
 def normalize_cols(M):
-  return M.astype(float) / M.sum(axis=0)
+  sums = M.sum(axis=0)
+  sums[sums == 0] = 1
+  return M.astype(float) / sums
 
 def normalize_rows(M):
   return normalize_cols(M.T).T
