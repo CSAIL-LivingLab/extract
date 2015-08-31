@@ -1,16 +1,16 @@
-import src.hmm
+from src.hmm import HMM
 from src.linalg import normalize_cols, normalize_rows
 import numpy as np
 
 def test_supervised_learn(hidden_states, outputs):
 
-  real_hmm = hmm.HMM(hidden_states, outputs)
+  real_hmm = HMM(hidden_states, outputs)
 
   k,v = len(hidden_states), len(outputs)
 
-  S_actual = normalize_cols(np.random.rand(size=(k,1)))
-  T_actual = normalize_rows(np.random.rand(size=(k,k)))
-  E_actual = normalize_rows(np.random.rand(size=(k,v)))
+  S_actual = normalize_cols(np.random.rand(k,1))
+  T_actual = normalize_rows(np.random.rand(k,k))
+  E_actual = normalize_rows(np.random.rand(k,v))
   print 'ACTUAL'
   print S_actual
   print T_actual
@@ -32,7 +32,7 @@ def test_supervised_learn(hidden_states, outputs):
   print Y
   print 'end data'
 
-  model = hmm.HMM(hidden_states, outputs)
+  model = HMM(hidden_states, outputs)
   model.train(X, Y)
   print 'LEARNED'
   print model.start_p

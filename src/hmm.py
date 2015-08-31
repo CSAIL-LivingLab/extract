@@ -1,4 +1,5 @@
 import numpy as np
+from prob import sample_pmf
 from linalg import normalize_cols, normalize_rows, is_col_stochastic, is_row_stochastic
 
 # Hidden Markov Model
@@ -93,9 +94,6 @@ class HMM:
     T = normalize_rows(t_count)
 
     e_count = np.zeros(shape=(k,v))
-    print Y
-    print len(Y)
-    print Y.shape
     for i in range(len(Y)):
       y_i = Y[i,:]
       x_i = X[i,:]

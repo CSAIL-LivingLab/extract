@@ -1,10 +1,28 @@
 import sys
-from src.parse import read_data, tokenize, parse_data, featurize
+from src.extract import FieldExtractor
+from src.parse import load_data, parse_data, featurize, load_extractions, examples2labels
+
+def typ(token):
+  return token.typ()
 
 if __name__ == '__main__':
   filename = sys.argv[1]
-  raw_data = read_data(filename)
-  tokens = tokenize(raw_data)
-  logical_data = parse_data(tokens)
-  oo = featurize(logical_data)
-  print oo
+  tokens = load_data(filename)
+  print 'tokens',tokens
+  TX = parse_data(tokens)
+  for tx in TX:
+    print 'tx', tx
+  phi = typ
+  X = featurize(TX, phi)
+  print 'X',X
+
+  TE = load_extractions(sys.argv[2])
+  Y = examples2labels(TX, TE)
+  print 'Y',Y
+
+  fe = FieldExtractor()
+  fe.train(X,Y)
+
+  print fe.hmm.start_p
+  print fe.hmm.trans_p
+  print fe.hmm.emit_p

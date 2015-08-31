@@ -32,26 +32,48 @@ def tokenize(raw_data):
     tokens.append(token)
   return tokens
 
-def parse_data(tokens):
-  logical_data = []
-  x = []
-  for token in tokens:
-    # split on newlines
-    if token.string == '\n':
-      logical_data.append(x)
-      x = []
-    else:
-      x.append(token)
-  return logical_data
+def load_data(filename):
+  raw_data = read_data(filename)
+  print raw_data
+  return tokenize(raw_data)
 
-def featurize(logical_data):
-  features = []
-  for x in logical_data:
-    stop_token = Token.stop()
-    feature_vector = [token.typ() for token in x]
-    feature_vector.append(stop_token.typ())
-    features.append(feature_vector)
-  return features
+def separate(tokens):
+  TX = []
+  tx = []
+  for token in tokens:
+    if token.string == '\n': # separator
+      TX.append(tx)
+      tx = []
+    else:
+      tx.append(token)
+  if tx:
+    TX.append(tx)
+  return TX
+
+def pad(TX):
+  for tx in TX:
+    tx.append(Token.stop())
+
+  longest = 0
+  for tx in TX:
+    if len(tx) > longest:
+      longest = len(tx)
+
+  for tx in TX:
+    pad_length = longest - len(tx)
+    tx.extend([Token.stop()] * pad_length)
+
+def parse_data(tokens):
+  TX = separate(tokens)
+  pad(TX)
+  return TX
+
+def featurize(TX, phi):
+  X = []
+  for tx in TX:
+    x = [phi(token) for token in tx]
+    X.append(x)
+  return X
 
 class Token:
   STOP = 0
@@ -93,7 +115,7 @@ class Token:
     self.string += char
 
   def __eq__(self, other):
-    return self.string == other.string
+    return self.string == other.string and self.stop == other.stop
 
   def __repr__(self):
     return "<{} {}>".format(repr(self.string)[1:-1], self.typ_str())
@@ -114,24 +136,30 @@ def load_extractions(filename):
 
 def examples2labels(Tx, Te):
   Y = []
+  print Tx
+  print Te
   assert len(Tx) == len(Te)
   for i in range(len(Tx)):
     x_i = Tx[i]
     e_i = Te[i]
-    y_i = labels(x_i, e_i)
-    y_i.append(0)
-    Y.append(y_i)
+    Y.append(labels(x_i, e_i))
   return Y
 
 def labels(x, e):
   matches = ordered_matches(x, e)
   garbage = len(matches) + 1
   labels = [garbage]*len(x)
+
   for i in range(len(matches)):
     index = matches[i]
     pattern = e[i]
     if pattern:
       replace(labels, range(index, index+len(pattern)), i + 1)
+
+  for i in range(len(labels)):
+    if x[i] == Token.stop():
+      replace(labels, range(i, len(labels)), 0)
+      break
   return labels
 
 def replace(l, indices, value):
