@@ -34,7 +34,6 @@ def tokenize(raw_data):
 
 def load_data(filename):
   raw_data = read_data(filename)
-  print raw_data
   return tokenize(raw_data)
 
 def separate(tokens):

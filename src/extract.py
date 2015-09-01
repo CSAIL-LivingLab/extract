@@ -11,3 +11,7 @@ class FieldExtractor:
     outputs = list(set(chain.from_iterable(X)))
     self.hmm = hmm.HMM(hidden_states, outputs)
     self.hmm.train(X,Y)
+
+  def extract(self, x):
+    # TODO actually extract
+    return self.hmm.viterbi(x)
