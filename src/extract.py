@@ -6,6 +6,9 @@ class FieldExtractor:
   def __init__(self):
     self.hmm = None
 
+  def ingest(fX,fY):
+    pass
+
   def train(self, X, Y=None):
     hidden_states = list(set(chain.from_iterable(Y)))
     outputs = list(set(chain.from_iterable(X)))

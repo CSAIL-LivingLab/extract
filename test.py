@@ -1,50 +1,83 @@
-from src.hmm import HMM
-from src.linalg import normalize_cols, normalize_rows
-import numpy as np
+import sys
+from src.extract import FieldExtractor
+from src.learn import featurize, numerical
+from src.lex import Lexer
+from src.parse import load_txt, load_csv, pad, separate, labels
 
-def test_supervised_learn(hidden_states, outputs):
+def typ(token):
+  return token.typ
 
-  real_hmm = HMM(hidden_states, outputs)
+# model
+emission_types = {
+  'num': '\d+',
+  'abc': '[a-zA-Z]+',
+  'sym': '[-`=[\]\\\\;\',./~!@#$%^&*()_+{}|:"<>?\s]'
+}
 
-  k,v = len(hidden_states), len(outputs)
+if __name__ == '__main__':
+  in_filename = sys.argv[1]
+  out_filename = sys.argv[2]
 
-  S_actual = normalize_cols(np.random.rand(k,1))
-  T_actual = normalize_rows(np.random.rand(k,k))
-  E_actual = normalize_rows(np.random.rand(k,v))
-  print 'ACTUAL'
-  print S_actual
-  print T_actual
-  print E_actual
-  print 'end actual'
+  # load
+  ######
 
-  real_hmm.set_params(S_actual, T_actual, E_actual)
+  inpt = load_txt(in_filename)
+  out = load_csv(out_filename)
 
-  t, n = 3, 1000
-  Y = np.zeros(shape=(n,t))
-  X = np.zeros(shape=(n,t))
-  for i in range(n):
-    y_i,x_i = real_hmm.generate(t)
-    Y[i,:] = y_i
-    X[i,:] = x_i
+  # lex
+  #####
 
-  print 'DATA'
-  print X
-  print Y
-  print 'end data'
+  lexer = Lexer(emission_types)
 
-  model = HMM(hidden_states, outputs)
-  model.train(X, Y)
-  print 'LEARNED'
-  print model.start_p
-  print model.trans_p
-  print model.emit_p
-  print 'end learned'
+  ## lex input
+  tokens = lexer.tokenize(inpt)
+  print 'tokens:\n{}'.format(tokens)
 
-  y_actual, x = real_hmm.generate(t)
-  y_predicted = model.viterbi(x)
-  print 'PREDICT'
-  print y_actual
-  print y_predicted
-  print 'end predict'
+  ## lex output
+  To = []
+  for row in out:
+    To.append([lexer.tokenize(item) for item in row])
+  print 'lexed out:\n{}'.format(To)
 
-test_supervised_learn(['A', 'B', 'C', 'D', 'E'], ['x', 'y', 'z'])
+  # parse
+  #######
+
+  # record break and standardize
+  Ti = pad(separate(tokens))
+  print 'parsed in:\n{}'.format(Ti)
+
+  # numerical
+  ###########
+
+  X = featurize(Ti, typ)
+  print 'X:\n{}'.format(X)
+  X_num, x_translator = numerical(X)
+  print 'X_num:\n{}'.format(X_num)
+
+  # labels
+  Y = labels(Ti,To)
+  print 'Y:\n{}'.format(Y)
+  Y_num, y_translator = numerical(Y)
+  print 'Y_num:\n{}'.format(Y_num)
+
+  # ML
+  ####
+
+  fe = FieldExtractor()
+
+  # train
+  fe.train(X_num, Y_num)
+
+  print fe.hmm.start_p
+  print fe.hmm.trans_p
+  print fe.hmm.emit_p
+
+  test_data = load_txt(sys.argv[3])
+  tokens_test = lexer.tokenize(test_data)
+  Tx_test = pad(separate(tokens_test))
+  X_test = featurize(Tx_test, typ)
+  X_test_num, _ = numerical(X_test, x_translator)
+
+  # predict
+  for x_test_num in X_test_num:
+    print fe.extract(x_test_num) # X_test ingested like X_num

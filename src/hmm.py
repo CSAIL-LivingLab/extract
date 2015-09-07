@@ -131,6 +131,14 @@ class HMM:
     n = 0           # if only one element is observed max is sought in the initialization values
     if len(obs) != 1:
       n = t
+    #print_dptable(V)
     (prob, state) = max((V[n][y], y) for y in range(len(self.hidden_states)))
     return (prob, path[state])
 
+def print_dptable(V):
+    s = "    " + " ".join(("%7d" % i) for i in range(len(V))) + "\n"
+    for y in V[0]:
+        s += "%.5s: " % y
+        s += " ".join("%.7s" % ("%f" % v[y]) for v in V)
+        s += "\n"
+    print(s)

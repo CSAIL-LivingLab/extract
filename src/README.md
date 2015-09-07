@@ -1,52 +1,63 @@
-
-Current Ingestion
------------------
+pipeline
+---------
 
 ```python
-raw_data = read_data(<filename>)
-tokens = tokenize(raw_data)
-logical_data = parse(tokens)
-features = featurize(logical_data)
+# model
+#######
+
+emission_types = {...}
+
+# load
+######
+
+in = load_txt('input.txt')
+out = load_csv('output.csv')
+
+# lex
+#####
+
+lexer = Lexer(emission_types)
+
+## lex input
+tokens = lexer.tokenize(in)
+
+## lex output
+To = []
+for row in len(out):
+  To.append([lexer.tokenize(item) for item in row])
+
+# parse
+#######
+
+# record break and standardize
+Ti = pad(split(tokens))
+
+# numerical
+###########
+
+X = featurize(Ti, phi)
+X_num, num2x = numerical(X)
+
+# labels
+Y = labels(Ti,To)
+Y_num, num2y = numerical(Y)
+
+# ML
+####
+
+fe = FieldExtractor()
+
+# train
+fe.train(X_num, Y_num)
+
+# predict
+fe.predict(X_test) # X_test ingested like X_num
 ```
 
 NEXT UP
 =======
 
-dev: specify possible outputs with regexs
-  - `[a-zA-z]` -> alpha
-    - uppercase
-    - lowercase
-    - first letter capitalized
-    - mixed case
-    - etc...
-  - `[0-9]` -> number
-    - different classes based on # on digits?
-  - `[^a-zA-Z & ^0-9]` -> symbol
-    - whitespace?
-    - punctuation
-    - other...?
-
 hierarchy of possible outputs -> granularity on demand
-
-load sample input (txt)
------------------------
-
-```python
-  def load_data(filname):
-    with open(filename, 'r') as f:
-      return tokenize(f)
-
-  def split_and_pad(tokens):
-    # split by separator (eg. newline for now)
-    # scan to find max sequence length
-    # add terminating STOP and pad with STOPS to reach uniform length
-
-  def featurize(proto_records):
-    # apply transformation function to each x
-```
-
-load sample output (csv)
-------------------------
 
 IDEAS
 =====
