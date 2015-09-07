@@ -11,43 +11,20 @@ def typ(token):
 emission_types = {
   'num': '\d+',
   'abc': '[a-zA-Z]+',
-  'sym': '[-`=[\]\\\\;\',./~!@#$%^&*()_+{}|:"<>?\s]'
+  #'sym': '[-`=[\]\\\\;\',./~!@#$%^&*()_+{}|:"<>?\s]'
+  'spc': '\s+',
+  'pnc': '[-`=[\]\\\\;\',./~!@#$%^&*()_+{}|:"<>?]'
 }
 
 if __name__ == '__main__':
   in_filename = sys.argv[1]
   out_filename = sys.argv[2]
 
-  # load
+  # read
   ######
 
-  inpt = load_txt(in_filename)
-  out = load_csv(out_filename)
-
-  # lex
-  #####
-
-  lexer = Lexer(emission_types)
-
-  ## lex input
-  tokens = lexer.tokenize(inpt)
-  print 'tokens:\n{}'.format(tokens)
-
-  ## lex output
-  To = []
-  for row in out:
-    To.append([lexer.tokenize(item) for item in row])
-  print 'lexed out:\n{}'.format(To)
-
-  # parse
-  #######
-
-  # record break and standardize
-  Ti = pad(separate(tokens))
-  print 'parsed in:\n{}'.format(Ti)
-
-  # numerical
-  ###########
+  Ti = load_txt(in_filename, emission_types)
+  To = load_csv(out_filename, emission_types)
 
   X = featurize(Ti, typ)
   print 'X:\n{}'.format(X)
@@ -72,9 +49,7 @@ if __name__ == '__main__':
   print fe.hmm.trans_p
   print fe.hmm.emit_p
 
-  test_data = load_txt(sys.argv[3])
-  tokens_test = lexer.tokenize(test_data)
-  Tx_test = pad(separate(tokens_test))
+  Tx_test = load_txt(sys.argv[3], emission_types)
   X_test = featurize(Tx_test, typ)
   X_test_num, _ = numerical(X_test, x_translator)
 

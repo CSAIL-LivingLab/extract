@@ -1,17 +1,17 @@
 import csv
-from lex import Token
+from lex import Token, Lexer
 
 # load
 ######
 
-def load_txt(filename):
+def read_txt(filename):
   raw_data = []
   with open(filename, 'r') as f:
     for line in f:
       raw_data.append(line)
   return ''.join(raw_data)
 
-def load_csv(filename):
+def read_csv(filename):
   with open(filename, 'rb') as f:
     return list(csv.reader(f, skipinitialspace=True, delimiter=',', quotechar='"'))
 
@@ -102,3 +102,18 @@ def next_match(x, pattern, start):
       return i
     i += 1
   return -1
+
+def load_txt(filename, emission_types):
+  text = read_txt(filename)
+  lexer = Lexer(emission_types)
+  tokens = lexer.tokenize(text)
+  Tx = pad(separate(tokens))
+  return Tx
+
+def load_csv(filename, emission_types):
+  out = read_csv(filename)
+  lexer = Lexer(emission_types)
+  To = []
+  for row in out:
+    To.append([lexer.tokenize(item) for item in row])
+  return To
