@@ -16,12 +16,10 @@ class FieldExtractor:
     self.hmm.train(X,Y)
 
   def extract(self, x):
-    # TODO actually extract
-    #row = []
-    #num_row = self.hmm.viterbi(x)
     return self.hmm.viterbi(x)
 
   def extract_all(self, X):
     csv = []
     for x in X:
       self.extract(x)
+      
