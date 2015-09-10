@@ -1,7 +1,7 @@
 import csv
 from lex import Token, Lexer
 
-# load
+# read
 ######
 
 def read_txt(filename):
@@ -43,13 +43,6 @@ def pad(TX):
   for tx in TX:
     pad_length = longest - len(tx)
     tx.extend([Token.stop()] * pad_length)
-  return TX
-
-def parse(tokens):
-  # record break
-  TX = separate(tokens)
-  # normalize
-  pad(TX)
   return TX
 
 # labeling
@@ -103,6 +96,9 @@ def next_match(x, pattern, start):
     i += 1
   return -1
 
+# load
+######
+
 def load_txt(filename, emission_types):
   text = read_txt(filename)
   lexer = Lexer(emission_types)
@@ -117,3 +113,21 @@ def load_csv(filename, emission_types):
   for row in out:
     To.append([lexer.tokenize(item) for item in row])
   return To
+
+
+def chunk_fields(Z_predict, X):
+  C = []
+  for i in range(len(Z_predict)):
+    z_i = Z_predict[i]
+    x_i = X[i]
+    chunks = []
+    chunk = []
+    for t in range(len(z_i)):
+      if not chunk or z_i[j] == z_i[j-1]:
+        chunk.append(x_i[j])
+      else:
+        chunks.append(chunk)
+        chunk = [x_i[j]]
+    chunks.append(chunk)
+    C.append(chunks)
+  return C

@@ -6,9 +6,13 @@ Hidden Markov Models for my thesis
 Pipeline
 --------
   ```python
-  in = load_txt('input.txt')
-  out = load_csv('output.csv')
-  
+  def phi(...):
+    ...
+
+  Ti = load_txt('input.txt')
+  To = load_csv('output.csv')
+  X = featurize(Ti, phi)
+  Y = labels(Ti, To)
   ```
 
 API

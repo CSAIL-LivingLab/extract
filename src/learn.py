@@ -1,4 +1,5 @@
 import itertools
+import numpy as np
 
 def featurize(TX, phi):
   X = []
@@ -40,11 +41,12 @@ class Translator:
 
 def numerical(TX, translator=None):
   X = []
+  vals = set()
   if not translator:
     translator = Translator()
-    vals = list(set(itertools.chain.from_iterable(TX)))
+    vals = set(itertools.chain.from_iterable(TX))
     for val in vals:
       translator.add(val)
   for tx in TX:
     X.append([translator.get_num(tx_i) for tx_i in tx])
-  return X, translator
+  return np.array(X), len(vals), translator
