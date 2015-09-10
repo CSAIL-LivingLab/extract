@@ -2,6 +2,15 @@ Xtract
 ======
 Extracting fields from semi-structured data
 
+Install
+-------
+Installation via `pip`
+```bash
+git clone https://github.com/pcattori/hmm.git
+cd hmm
+pip install -r requirements.txt
+```
+
 Run
 ---
 
