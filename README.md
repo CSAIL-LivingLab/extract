@@ -6,8 +6,8 @@ Install
 -------
 Installation via `pip`
 ```bash
-git clone https://github.com/pcattori/hmm.git
-cd hmm
+git clone https://github.com/pcattori/extract.git
+cd extract
 pip install -r requirements.txt
 ```
 
@@ -15,6 +15,7 @@ Run
 ---
 
 ```bash
+cd extract
 python run.py <dataset>
 ```
 
