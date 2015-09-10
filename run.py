@@ -20,15 +20,11 @@ observation_types = {
 }
 
 if __name__ == '__main__':
-  in_f = 'data/hadoop/input.txt'
-  out_f = 'data/hadoop/output.csv'
-  test_f = 'data/hadoop/test.txt'
-  if len(sys.argv) > 1:
-    in_f = sys.argv[1]
-  if len(sys.argv) > 2:
-    out_f = sys.argv[2]
-  if len(sys.argv) > 3:
-    test_f = sys.argv[3]
+  folder = sys.argv[1]
+
+  in_f = 'data/{}/input.txt'.format(folder)
+  out_f = 'data/{}/output.csv'.format(folder)
+  test_f = 'data/{}/test.txt'.format(folder)
 
   fe = FieldExtractor(observation_types)
   fe.train(in_f, out_f)

@@ -1,4 +1,5 @@
 import hmm
+import numpy as np
 from itertools import chain
 from src.learn import featurize, numerical
 from src.parse import load_txt, load_csv, labels
@@ -26,6 +27,18 @@ def group_fields(z, x):
       field_num = z[t]
   return fields
 
+def labels2csv(Z, Tx):
+  csv = []
+  for i in range(len(Z)):
+    z_i = Z[i]
+    tx_i = Tx[i]
+    row = []
+    fields = group_fields(z_i, tx_i)
+    for j in range(max(chain.from_iterable(Z))):
+      row.append(fields.get(j,''))
+    csv.append(row)
+  return csv
+
 class FieldExtractor:
 
   def __init__(self, observation_types):
@@ -40,12 +53,12 @@ class FieldExtractor:
     Ti = load_txt(in_f, self.ots)
     X_obj = featurize(Ti, self.phi)
     X, v, self.x_translator = numerical(X_obj)
+    print self.x_translator.val2num
 
     if out_f:
       self.header, To = load_csv(out_f, self.ots)
       Y_obj = labels(Ti,To, self.header)
       Y, k, self.y_translator = numerical(Y_obj)
-
       self.hmm = hmm.HMM(k, v)
       self.hmm.train(X,Y)
     else:
@@ -56,6 +69,7 @@ class FieldExtractor:
     T_test = load_txt(test_f, self.ots)
     X_obj_test = featurize(T_test, self.phi)
     X_test, _, _ = numerical(X_obj_test, self.x_translator)
+    np.set_printoptions(threshold=np.nan)
 
     # viterbi
     Z = []
@@ -63,23 +77,17 @@ class FieldExtractor:
       Z.append(self.hmm.viterbi(x_test))
 
     # chunk fields
-    csv = []
-    for i in range(len(Z)):
-      z_i = Z[i]
-      x_i = T_test[i]
-      row = []
-      fields = group_fields(z_i, x_i)
-      for i in range(self.hmm.k):
-        row.append(fields.get(i,''))
-      csv.append(row)
+    csv = labels2csv(Z, T_test)
 
     # filter
+    return self._header_filter(csv)
+
+  # subroutines
+  #############
+
+  def _header_filter(self, csv):
+    filtered_csv = []
     indices = [self.y_translator.get_num(attr) for attr in self.header]
-    for i in range(len(csv)):
-      row = csv[i]
-      csv[i] = [row[j] for j in indices]
-
-    return csv
-
-  def extract2csv(self, test_f):
-    pass
+    for row in csv:
+      filtered_csv.append([row[j] for j in indices])
+    return filtered_csv

@@ -37,7 +37,8 @@ class Translator:
     return self.num2val.get(num, None)
 
   def get_num(self, val):
-    return self.val2num.get(val, None)
+    # return -1 to signal unseen value
+    return self.val2num.get(val, -1)
 
 def numerical(TX, translator=None):
   X = []

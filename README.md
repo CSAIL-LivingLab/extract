@@ -4,15 +4,19 @@ Extracting fields from semi-structured data
 
 Run
 ---
-To run with the default Hadoop Log data set:
+
 ```bash
-python run.py
+python run.py <dataset>
 ```
 
-To run on specific data set:
-```bash
-python run.py <input-example> <output-example> <test-data>
-```
+Where `<dataset>` is a directory within the `data` directory with the structure:
+
+- `<dataset>`
+  - `input.txt`
+  - `output.csv`
+  - `test.txt`
+
+NB: example outputs specified as CSV files with headers. Look at `data/hadoop/` and `data/tomcat/` for examples of properly structured datasets
 
 API
 ---
@@ -33,5 +37,4 @@ TODO
 
 BUGS
 ----
-- Fix issue where extractor crashes when a token type encounter in the test data was not present in the training data
 - Fix issue with multiple fields corresponding to same format/structure (eg. src and dst ip addresses)
