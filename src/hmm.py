@@ -89,7 +89,9 @@ class HMM:
     for y_i in Y:
       for t in range(len(y_i) - 1):
         t_count[y_i[t], y_i[t+1]] += 1
+    print t_count
     T = normalize_rows(t_count)
+    print T
 
     e_count = np.zeros(shape=(model.k,model.v))
     for i in range(len(Y)):

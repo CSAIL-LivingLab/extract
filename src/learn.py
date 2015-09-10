@@ -34,16 +34,17 @@ class Translator:
     del self.val2num[val]
 
   def get_val(self, num):
-    return self.num2val[num]
+    return self.num2val.get(num, None)
 
   def get_num(self, val):
-    return self.val2num[val]
+    return self.val2num.get(val, None)
 
 def numerical(TX, translator=None):
   X = []
   vals = set()
   if not translator:
     translator = Translator()
+    # TODO insufficient if a token in the test set does not appear in the training set
     vals = set(itertools.chain.from_iterable(TX))
     for val in vals:
       translator.add(val)

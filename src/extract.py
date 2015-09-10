@@ -34,6 +34,7 @@ class FieldExtractor:
     self.hmm = None
     self.x_translator = None
     self.y_translator = None
+    self.header = None
 
   def train(self, in_f, out_f=None):
     Ti = load_txt(in_f, self.ots)
@@ -41,12 +42,14 @@ class FieldExtractor:
     X, v, self.x_translator = numerical(X_obj)
 
     if out_f:
-      To = load_csv(out_f, self.ots)
-      Y_obj = labels(Ti,To)
+      self.header, To = load_csv(out_f, self.ots)
+      Y_obj = labels(Ti,To, self.header)
       Y, k, self.y_translator = numerical(Y_obj)
 
-    self.hmm = hmm.HMM(k, v)
-    self.hmm.train(X,Y)
+      self.hmm = hmm.HMM(k, v)
+      self.hmm.train(X,Y)
+    else:
+      raise NotImplementedError()
 
   def extract(self, test_f):
     # ingest test data
@@ -68,7 +71,13 @@ class FieldExtractor:
       fields = group_fields(z_i, x_i)
       for i in range(self.hmm.k):
         row.append(fields.get(i,''))
-      csv.append(row[:4])
+      csv.append(row)
+
+    # filter
+    indices = [self.y_translator.get_num(attr) for attr in self.header]
+    for i in range(len(csv)):
+      row = csv[i]
+      csv[i] = [row[j] for j in indices]
 
     return csv
 

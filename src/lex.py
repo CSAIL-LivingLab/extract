@@ -21,7 +21,7 @@ class Lexer:
       if not match:
         if self.unk:
           # TODO extend unk to cover text until reaching a search result for one of the types
-          tokens.append(Token(self.unk, text[i]))
+          tokens.append(Token.unknown())
           i += 1
         else:
           raise ValueError('{} did not match any types. Could not tokenize'.format(text[i:]))
@@ -33,12 +33,19 @@ class Token:
     self.typ = typ
     self.string = string
     self.stop = False
+    self.unk = False
 
   @staticmethod
   def stop():
     stop_token = Token('STOP', None)
     stop_token.stop = True
     return stop_token
+
+  @staticmethod
+  def unknown():
+    unk_token = Token('unk', None)
+    unk_token.unk = True
+    return unk_token
 
   def __eq__(self, other):
     return type(self) == type(other) and self.__dict__ == other.__dict__

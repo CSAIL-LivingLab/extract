@@ -13,7 +13,9 @@ def read_txt(filename):
 
 def read_csv(filename):
   with open(filename, 'rb') as f:
-    return list(csv.reader(f, skipinitialspace=True, delimiter=',', quotechar='"'))
+    table = list(csv.reader(f, skipinitialspace=True, delimiter=',', quotechar='"'))
+    header = table[0]
+    return header, table[1:]
 
 # parse
 #######
@@ -41,7 +43,7 @@ def pad(TX):
       longest = len(tx)
 
   for tx in TX:
-    pad_length = longest - len(tx)
+    pad_length = longest - len(tx) + 1
     tx.extend([Token.stop()] * pad_length)
   return TX
 
@@ -50,16 +52,16 @@ def pad(TX):
 
 # extractions
 
-def labels(Tx, Te):
+def labels(Tx, Te, header):
   Y = []
   assert len(Tx) == len(Te)
   for i in range(len(Tx)):
     x_i = Tx[i]
     e_i = Te[i]
-    Y.append(label(x_i, e_i))
+    Y.append(label(x_i, e_i, header))
   return Y
 
-def label(x, e):
+def label(x, e, header):
   matches = ordered_matches(x, e)
   labels = [None]*len(x)
 
@@ -67,11 +69,12 @@ def label(x, e):
     index = matches[i]
     pattern = e[i]
     if pattern:
-      replace(labels, range(index, index+len(pattern)), i)
+      replace(labels, range(index, index+len(pattern)), header[i])
 
   for i in range(len(labels)):
     if x[i] == Token.stop():
-      replace(labels, range(i, len(labels)), len(matches))
+      # TODO header may contain column named STOP, then what?
+      replace(labels, range(i, len(labels)), 'STOP')
       break
   return labels
 
@@ -107,27 +110,9 @@ def load_txt(filename, emission_types):
   return Tx
 
 def load_csv(filename, emission_types):
-  out = read_csv(filename)
+  header, out = read_csv(filename)
   lexer = Lexer(emission_types)
   To = []
   for row in out:
     To.append([lexer.tokenize(item) for item in row])
-  return To
-
-
-def chunk_fields(Z_predict, X):
-  C = []
-  for i in range(len(Z_predict)):
-    z_i = Z_predict[i]
-    x_i = X[i]
-    chunks = []
-    chunk = []
-    for t in range(len(z_i)):
-      if not chunk or z_i[j] == z_i[j-1]:
-        chunk.append(x_i[j])
-      else:
-        chunks.append(chunk)
-        chunk = [x_i[j]]
-    chunks.append(chunk)
-    C.append(chunks)
-  return C
+  return header, To
