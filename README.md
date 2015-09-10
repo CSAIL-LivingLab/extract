@@ -41,9 +41,12 @@ TODO
 ----
 - unsupervised learning via baum-welch to learn the token types (this could indirectly fix the 'multiple fields clashing' bug)
 - type hierarchy and progressive deepening
+- submodels for fields
 - smoothing
 - streaming pipeline
 - db as storage
+- detecting field separators via language modeling
+  - detecting record separators in the same way
 
 BUGS
 ----
