@@ -29,9 +29,10 @@ if __name__ == '__main__':
   fe = FieldExtractor(observation_types)
   fe.train(in_f, out_f)
 
-  print fe.hmm.start_p
-  print fe.hmm.trans_p
-  print fe.hmm.emit_p
+  ## uncomment below to display matrices for hmm
+  #print fe.hmm.start_p
+  #print fe.hmm.trans_p
+  #print fe.hmm.emit_p
 
   print fe.extract(test_f)
 

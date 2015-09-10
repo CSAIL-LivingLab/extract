@@ -1,5 +1,4 @@
 import hmm
-import numpy as np
 from itertools import chain
 from src.learn import featurize, numerical
 from src.parse import load_txt, load_csv, labels
@@ -53,7 +52,6 @@ class FieldExtractor:
     Ti = load_txt(in_f, self.ots)
     X_obj = featurize(Ti, self.phi)
     X, v, self.x_translator = numerical(X_obj)
-    print self.x_translator.val2num
 
     if out_f:
       self.header, To = load_csv(out_f, self.ots)
@@ -69,7 +67,6 @@ class FieldExtractor:
     T_test = load_txt(test_f, self.ots)
     X_obj_test = featurize(T_test, self.phi)
     X_test, _, _ = numerical(X_obj_test, self.x_translator)
-    np.set_printoptions(threshold=np.nan)
 
     # viterbi
     Z = []
