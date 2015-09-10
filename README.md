@@ -39,6 +39,7 @@ fe.extract('test.txt')
 
 TODO
 ----
+- probability thresholds for fields/records (ie. if viterbi probability is too low, don't extract from this line of text)
 - unsupervised learning via baum-welch to learn the token types (this could indirectly fix the 'multiple fields clashing' bug)
 - type hierarchy and progressive deepening
 - submodels for fields
