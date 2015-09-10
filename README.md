@@ -1,6 +1,18 @@
 DeepX
 =====
-Extracting fields from semi-structured data as inspired by Arch Learning
+Extracting fields from semi-structured data
+
+Run
+---
+To run with the default Hadoop Log data set:
+```bash
+python run.py
+```
+
+To run on specific data set:
+```bash
+python run.py <input-example> <output-example> <test-data>
+```
 
 API
 ---
