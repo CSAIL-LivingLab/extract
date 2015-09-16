@@ -1,5 +1,0 @@
-csv
-itertools
-numpy>=1.9.1
-re
-scipy>=0.15.1
