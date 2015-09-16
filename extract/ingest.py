@@ -1,5 +1,5 @@
 import csv
-from lex import Token, Lexer
+from .lex import Token, Lexer
 
 # read
 ######

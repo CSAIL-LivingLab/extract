@@ -45,7 +45,6 @@ def numerical(TX, translator=None):
   vals = set()
   if not translator:
     translator = Translator()
-    # TODO insufficient if a token in the test set does not appear in the training set
     vals = set(itertools.chain.from_iterable(TX))
     for val in vals:
       translator.add(val)

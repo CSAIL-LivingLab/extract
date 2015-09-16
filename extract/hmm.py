@@ -1,6 +1,6 @@
 import numpy as np
-from prob import sample_pmf
-from linalg import normalize_cols, normalize_rows, is_col_stochastic, is_row_stochastic
+from .prob import sample_pmf
+from .linalg import normalize_cols, normalize_rows, is_col_stochastic, is_row_stochastic
 
 # Hidden Markov Model
 #####################
