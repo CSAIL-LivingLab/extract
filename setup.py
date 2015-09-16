@@ -14,11 +14,8 @@ setup(name='extract',
     'extract'
   ],
   install_requires=[
-    'csv',
-    'itertools',
-    'numpy~>1.9.1',
-    're',
-    'scipy~>0.15.1'
+    'numpy>=1.9.1',
+    'scipy>=0.15.1'
   ],
   #package_data=,
   #data_files=,

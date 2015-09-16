@@ -8,8 +8,11 @@ Installation via `pip`
 ```bash
 git clone https://github.com/pcattori/extract.git
 cd extract
-pip install -r requirements.txt
+pip install .
 ```
+
+CAUTION: OUTDATED BELOW
+=======================
 
 Run
 ---
