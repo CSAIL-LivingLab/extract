@@ -1,4 +1,0 @@
-[
-["(DTW)", "(MIA)", "\"Delta Air Lines\"", "Mar/31/11", "Apr/07/11"],
-["(MCI)", "(ORD)", "\"Delta Air Lines\"", "Mar/31/11", "Apr/07/11"]
-]
