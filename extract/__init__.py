@@ -1,10 +1,82 @@
 import hmm
 from itertools import chain
 from .learn import featurize, numerical
-from .ingest import load_txt, load_csv, labels
+from .lex import Lexer
+from .ingest import labels
 
 def phi(t):
   return t.typ
+
+# model
+default_types = {
+  'num': '\d+',
+  'abc': '[a-zA-Z]+',
+  #'sym': '[-`=[\]\\\\;\',./~!@#$%^&*()_+{}|:"<>?\s]'
+  'spc': '\s+',
+  #'pnc': '[-`=[\]\\\\;\',./~!@#$%^&*()_+{}|:"<>?]'
+  'hyp': '[-]{1}',
+  'cln': '[:]{1}',
+  'prd': '[.]{1}',
+  'pnc': '[`=[\]\\\\;\',/~!@#$%^&*()_+{}|"<>?]'
+}
+
+class FieldExtractor:
+
+  # TODO set lexer with hierarchy
+  def __init__(self, fields, lexer=None):
+    self.fields = fields
+
+    if lexer:
+      self.lexer = lexer
+    else:
+      self.lexer = Lexer(default_types)
+
+    self.phi = phi
+    self.hmm = None
+    self.x_translator = None
+    self.y_translator = None
+
+  def train(self, txt_records, txt_labels=None):
+    Ti = Lexer.pad(self.lexer.tokenize_all(txt_records))
+    X_obj = featurize(Ti, self.phi)
+    X, v, self.x_translator = numerical(X_obj)
+
+    if txt_labels:
+      To = self.lexer.tokenize_all(txt_labels)
+      Y_obj = labels(Ti, To, self.fields)
+      Y, k, self.y_translator = numerical(Y_obj)
+      self.hmm = hmm.HMM(k, v)
+      self.hmm.train(X,Y)
+    else:
+      raise NotImplementedError()
+
+  def extract(self, txt_records):
+    # ingest test data
+    unpadded = self.lexer.tokenize_all(txt_records)
+    T_test = Lexer.pad(unpadded)
+    X_obj_test = featurize(T_test, self.phi)
+    X_test, _, _ = numerical(X_obj_test, self.x_translator)
+
+    # viterbi
+    Z = []
+    for x_test in X_test:
+      Z.append(self.hmm.viterbi(x_test))
+
+    # chunk fields
+    extraction = extract_from_labels(Z, T_test)
+
+    # filter
+    return self._field_filter(extraction)
+
+  # subroutines
+  #############
+
+  def _field_filter(self, csv):
+    filtered_csv = []
+    indices = [self.y_translator.get_num(attr) for attr in self.fields]
+    for row in csv:
+      filtered_csv.append([row[j] for j in indices])
+    return filtered_csv
 
 # chunk
 #######
@@ -26,8 +98,8 @@ def group_fields(z, x):
       field_num = z[t]
   return fields
 
-def labels2csv(Z, Tx):
-  csv = []
+def extract_from_labels(Z, Tx):
+  extraction = []
   for i in range(len(Z)):
     z_i = Z[i]
     tx_i = Tx[i]
@@ -35,56 +107,6 @@ def labels2csv(Z, Tx):
     fields = group_fields(z_i, tx_i)
     for j in range(max(chain.from_iterable(Z))):
       row.append(fields.get(j,''))
-    csv.append(row)
-  return csv
+    extraction.append(row)
+  return extraction
 
-class FieldExtractor:
-
-  def __init__(self, observation_types):
-    self.phi = phi
-    self.ots = observation_types
-    self.hmm = None
-    self.x_translator = None
-    self.y_translator = None
-    self.header = None
-
-  def train(self, in_f, out_f=None):
-    Ti = load_txt(in_f, self.ots)
-    X_obj = featurize(Ti, self.phi)
-    X, v, self.x_translator = numerical(X_obj)
-
-    if out_f:
-      self.header, To = load_csv(out_f, self.ots)
-      Y_obj = labels(Ti,To, self.header)
-      Y, k, self.y_translator = numerical(Y_obj)
-      self.hmm = hmm.HMM(k, v)
-      self.hmm.train(X,Y)
-    else:
-      raise NotImplementedError()
-
-  def extract(self, test_f):
-    # ingest test data
-    T_test = load_txt(test_f, self.ots)
-    X_obj_test = featurize(T_test, self.phi)
-    X_test, _, _ = numerical(X_obj_test, self.x_translator)
-
-    # viterbi
-    Z = []
-    for x_test in X_test:
-      Z.append(self.hmm.viterbi(x_test))
-
-    # chunk fields
-    csv = labels2csv(Z, T_test)
-
-    # filter
-    return self._header_filter(csv)
-
-  # subroutines
-  #############
-
-  def _header_filter(self, csv):
-    filtered_csv = []
-    indices = [self.y_translator.get_num(attr) for attr in self.header]
-    for row in csv:
-      filtered_csv.append([row[j] for j in indices])
-    return filtered_csv

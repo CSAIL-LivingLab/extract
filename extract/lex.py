@@ -2,6 +2,21 @@ import re
 
 class Lexer:
 
+  @staticmethod
+  def pad(TX):
+    for tx in TX:
+      tx.append(Token.stop())
+
+    longest = 0
+    for tx in TX:
+      if len(tx) > longest:
+        longest = len(tx)
+
+    for tx in TX:
+      pad_length = longest - len(tx) + 1
+      tx.extend([Token.stop()] * pad_length)
+    return TX
+
   def __init__(self, types, unk=True):
     self.types = types
     if unk:
@@ -26,6 +41,18 @@ class Lexer:
         else:
           raise ValueError('{} did not match any types. Could not tokenize'.format(text[i:]))
     return tokens
+
+  def tokenize_all(self, text):
+    if type(text) == str or type(text) == unicode:
+      tokens_list = self.tokenize(text)
+      return tokens_list
+    elif type(text) == list or type(text) == tuple:
+      tokens_list = []
+      for subtext in text:
+        tokens_list.append(self.tokenize_all(subtext))
+      return tokens_list
+    else:
+      raise TypeError('Unrecognized type: ' + str(type(text)))
 
 class Token:
 

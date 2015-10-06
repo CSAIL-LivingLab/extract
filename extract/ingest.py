@@ -4,48 +4,18 @@ from .lex import Token, Lexer
 # read
 ######
 
-def read_txt(filename):
+def load_txt(filename):
   raw_data = []
   with open(filename, 'r') as f:
     for line in f:
       raw_data.append(line)
-  return ''.join(raw_data)
+  return raw_data
 
-def read_csv(filename):
+def load_csv(filename):
   with open(filename, 'rb') as f:
     table = list(csv.reader(f, skipinitialspace=True, delimiter=',', quotechar='"'))
     header = table[0]
     return header, table[1:]
-
-# parse
-#######
-
-def separate(tokens):
-  TX = []
-  tx = []
-  for token in tokens:
-    if token.string == '\n': # separator
-      TX.append(tx)
-      tx = []
-    else:
-      tx.append(token)
-  if tx:
-    TX.append(tx)
-  return TX
-
-def pad(TX):
-  for tx in TX:
-    tx.append(Token.stop())
-
-  longest = 0
-  for tx in TX:
-    if len(tx) > longest:
-      longest = len(tx)
-
-  for tx in TX:
-    pad_length = longest - len(tx) + 1
-    tx.extend([Token.stop()] * pad_length)
-  return TX
 
 # labeling
 ##########
@@ -102,17 +72,16 @@ def next_match(x, pattern, start):
 # load
 ######
 
-def load_txt(filename, emission_types):
-  text = read_txt(filename)
-  lexer = Lexer(emission_types)
-  tokens = lexer.tokenize(text)
-  Tx = pad(separate(tokens))
-  return Tx
-
-def load_csv(filename, emission_types):
-  header, out = read_csv(filename)
-  lexer = Lexer(emission_types)
-  To = []
-  for row in out:
-    To.append([lexer.tokenize(item) for item in row])
-  return header, To
+#def load_txt(txt_records, emission_types):
+  #lexer = Lexer(emission_types)
+  #unpadded_Ti = []
+  #for txt_record in txt_records:
+    #unpadded_Ti.append(lexer.tokenize(txt_record))
+  #return pad(unpadded_Ti)
+#
+#def load_labels(labels, emission_types):
+  #lexer = Lexer(emission_types)
+  #To = []
+  #for label in labels:
+    #To.append([lexer.tokenize(item) for item in label])
+  #return To
