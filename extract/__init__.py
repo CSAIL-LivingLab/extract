@@ -17,7 +17,9 @@ default_types = {
   'hyp': '[-]{1}',
   'cln': '[:]{1}',
   'prd': '[.]{1}',
-  'pnc': '[`=[\]\\\\;\',/~!@#$%^&*()_+{}|"<>?]'
+  'pnc': '[`=[\]\\\\;\',/~!@#$%^&*()_+{}|"<>?]',
+  #'src': 'src: /', # for prefix testing
+  #'dst': 'dest: /' # for prefix testing
 }
 
 class FieldExtractor:

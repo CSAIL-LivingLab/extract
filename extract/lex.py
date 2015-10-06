@@ -26,20 +26,25 @@ class Lexer:
     tokens = []
     i = 0
     while i < len(text):
-      match = None
+      longest_match = None
+      longest_match_typ = None
       for typ in self.types:
         match = re.match(self.types[typ], text[i:])
         if match:
-          tokens.append(Token(typ, match.group()))
-          i += match.end()
-          break
-      if not match:
-        if self.unk:
-          # TODO extend unk to cover text until reaching a search result for one of the types
-          tokens.append(Token.unknown())
-          i += 1
-        else:
-          raise ValueError('{} did not match any types. Could not tokenize'.format(text[i:]))
+          if longest_match is None or len(match.group()) > len(longest_match.group()):
+            longest_match = match
+            longest_match_typ = typ
+      if longest_match:
+        tokens.append(Token(longest_match_typ, longest_match.group()))
+        i += longest_match.end()
+      elif self.unk:
+        # TODO extend unk to cover text until reaching a search result for one of the types
+        tokens.append(Token.unknown())
+        i += 1
+      else:
+        raise ValueError('{} did not match any types. Could not tokenize'.format(text[i:]))
+    print 'tokenizing:',text
+    print 'tokens:', tokens
     return tokens
 
   def tokenize_all(self, text):
@@ -79,6 +84,9 @@ class Token:
 
   def __repr__(self):
     if self.string:
-      return "<{} {}>".format(repr(self.string)[1:-1], self.typ)
+      display_string = repr(self.string)[1:-1]
+      if type(self.string) == unicode:
+        display_string = repr(self.string)[2:-1]
+      return "<{} {}>".format(display_string, self.typ)
     else:
       return "<{}>".format(self.typ)
