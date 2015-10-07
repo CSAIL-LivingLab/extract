@@ -1,7 +1,7 @@
 import csv
-from .lex import Token, Lexer
+from .lex import Token
 
-# read
+# load
 ######
 
 def load_txt(filename):
@@ -68,20 +68,3 @@ def next_match(x, pattern, start):
       return i
     i += 1
   return -1
-
-# load
-######
-
-#def load_txt(txt_records, emission_types):
-  #lexer = Lexer(emission_types)
-  #unpadded_Ti = []
-  #for txt_record in txt_records:
-    #unpadded_Ti.append(lexer.tokenize(txt_record))
-  #return pad(unpadded_Ti)
-#
-#def load_labels(labels, emission_types):
-  #lexer = Lexer(emission_types)
-  #To = []
-  #for label in labels:
-    #To.append([lexer.tokenize(item) for item in label])
-  #return To

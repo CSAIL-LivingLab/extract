@@ -43,8 +43,8 @@ class Lexer:
         i += 1
       else:
         raise ValueError('{} did not match any types. Could not tokenize'.format(text[i:]))
-    print 'tokenizing:',text
-    print 'tokens:', tokens
+    #print 'tokenizing:',text
+    #print 'tokens:', tokens
     return tokens
 
   def tokenize_all(self, text):
