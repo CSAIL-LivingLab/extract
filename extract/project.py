@@ -1,5 +1,5 @@
 from .extract import FieldExtractor
-from os import mkdir, path
+from os import mkdir, path, walk
 import sqlite3 as lite
 import sys
 
@@ -41,11 +41,18 @@ class Project:
     return project
 
   @staticmethod
-  def load_projects():
+  def load_projects(projects_dir=PROJECTS):
     projects = []
-    for project_name in next(walk(Project.PROJECTS))[1]:
+    for project_name in next(walk(projects_dir))[1]:
       projects.append(Project(project_name))
     return projects
+
+  @staticmethod
+  def load_project(name, projects_dir=PROJECTS):
+    for project_name in next(walk(projects_dir))[1]:
+      if name == project_name:
+        return Project(project_name)
+    raise ValueError("No project with name '{}' found in {}".format(name, projects_dir))
 
   def __init__(self, name):
     self.name = name
@@ -72,6 +79,9 @@ class Project:
     # TODO use FOREIGN KEY instead of PRIMARY KEY
     header.append('PRIMARY KEY ({record_id})'.format(record_id=RECORD_ID))
     return header
+
+  def get_labels(self):
+    return select_all(self.db(), LABEL_TABLE)
 
   def unlabeled_sample(self, n):
     # SELECT txt.record_id, txt.txt_record
@@ -130,6 +140,10 @@ class Project:
       extraction_records.append(extraction_record)
 
     insert_into(self.db(), EXTRACTION_TABLE, extraction_records)
+
+  def get_extraction(self):
+    # TODO join with txt_table to view txt and extraction side by side?
+    return select_all(self.db(), EXTRACTION_TABLE)
 
   def safe_query(self, query):
     def sql(cur):
