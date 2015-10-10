@@ -1,10 +1,13 @@
-from .extract import FieldExtractor
-from os import mkdir, path, walk
+import csv
 import sqlite3 as lite
+import shutil
 import sys
+from os import mkdir, path, walk
+from .extract import FieldExtractor
 
-# database name
+# filenames
 PROJECT_DB = 'project.db'
+FIELDS_CSV = 'fields.csv'
 
 # table names
 TXT_TABLE = 'txt'
@@ -41,18 +44,29 @@ class Project:
     return project
 
   @staticmethod
-  def load_projects(projects_dir=PROJECTS):
+  def load_projects(projects_dir=None):
+    if not projects_dir:
+      projects_dir = Project.PROJECTS
     projects = []
     for project_name in next(walk(projects_dir))[1]:
       projects.append(Project(project_name))
     return projects
 
   @staticmethod
-  def load_project(name, projects_dir=PROJECTS):
+  def load_project(name, projects_dir=None):
+    if not projects_dir:
+      projects_dir = Project.PROJECTS
     for project_name in next(walk(projects_dir))[1]:
       if name == project_name:
         return Project(project_name)
     raise ValueError("No project with name '{}' found in {}".format(name, projects_dir))
+
+  @staticmethod
+  def delete_project(name, projects_dir=None):
+    if not projects_dir:
+      projects_dir = Project.PROJECTS
+    project_path = path.join(projects_dir, name)
+    shutil.rmtree(project_path)
 
   def __init__(self, name):
     self.name = name
@@ -62,12 +76,22 @@ class Project:
     return path.join(self.path, PROJECT_DB)
 
   def get_fields(self):
-    cols = column_names(self.db(), LABEL_TABLE)
-    return cols[1:] # skip id column
+    fields_path = path.join(self.path, FIELDS_CSV)
+    if not path.exists(fields_path):
+      return None
+    with open(fields_path, 'r') as f:
+      return next(csv.reader(f))
+    #cols = column_names(self.db(), LABEL_TABLE)
+    #return cols[1:] # skip id column
 
   def set_fields(self, fields):
+    fields_path = path.join(self.path, FIELDS_CSV)
+    with open(fields_path, 'w') as f:
+      csv.writer(f, quoting=csv.QUOTE_ALL).writerow(fields)
+
+    # TODO warn user before dropping table?
     drop_table(self.db(), LABEL_TABLE)
-    create_table(self.db(), LABEL_TABLE, self.standard_header(fields))
+    create_table(self.db(), LABEL_TABLE, self.standard_header())
 
   def standard_header(self, fields=None):
     if not fields:
@@ -81,9 +105,14 @@ class Project:
     return header
 
   def get_labels(self):
+    if not table_exists(self.db(), LABEL_TABLE):
+      return []
     return select_all(self.db(), LABEL_TABLE)
 
   def unlabeled_sample(self, n):
+    if not table_exists(self.db(), LABEL_TABLE):
+      return select_all(self.db(), TXT_TABLE)[:n]
+
     # SELECT txt.record_id, txt.txt_record
     # FROM txt, labels
     # WHERE txt.record_id NOT IN (SELECT record_id FROM labels)
@@ -123,6 +152,7 @@ class Project:
   def extract(self):
     # create fresh extraction table
     drop_table(self.db(), EXTRACTION_TABLE)
+    # TODO create with confidence col
     create_table(self.db(), EXTRACTION_TABLE, self.standard_header())
 
     # TODO consider FieldExtractor API
@@ -142,6 +172,8 @@ class Project:
     insert_into(self.db(), EXTRACTION_TABLE, extraction_records)
 
   def get_extraction(self):
+    if not table_exists(self.db(), EXTRACTION_TABLE):
+      return []
     # TODO join with txt_table to view txt and extraction side by side?
     return select_all(self.db(), EXTRACTION_TABLE)
 
@@ -153,6 +185,12 @@ class Project:
 
 # Database operations
 #####################
+
+def table_exists(db, tablename):
+  def sql(cur):
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='{tablename}'".format(        tablename=tablename))
+    return cur.fetchall()
+  return safe_sql(db, sql)
 
 def create_table(db, tablename, columns):
   def sql(cur):
