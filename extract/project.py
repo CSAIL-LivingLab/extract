@@ -75,6 +75,9 @@ class Project:
   def db(self):
     return path.join(self.path, PROJECT_DB)
 
+  def get_txt(self):
+    return select_all(self.db(), TXT_TABLE)
+
   def get_fields(self):
     fields_path = path.join(self.path, FIELDS_CSV)
     if not path.exists(fields_path):
@@ -92,6 +95,12 @@ class Project:
     # TODO warn user before dropping table?
     drop_table(self.db(), LABEL_TABLE)
     create_table(self.db(), LABEL_TABLE, self.standard_header())
+
+  def get_header(self):
+    fields = self.get_fields()
+    if not fields:
+      return None
+    return [RECORD_ID] + fields
 
   def standard_header(self, fields=None):
     if not fields:
