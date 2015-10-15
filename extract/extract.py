@@ -1,13 +1,12 @@
-from itertools import chain
 from .hmm import HMM
 from .learn import featurize, numerical
+from .learn import featurize_all, numerical_all
 from .lex import Lexer
-from .ingest import labels
 
 def phi(t):
   return t.typ
 
-# model
+# TODO set lexer with hierarchy
 default_types = {
   'num': '\d+',
   'abc': '[a-zA-Z]+',
@@ -18,100 +17,174 @@ default_types = {
   'cln': '[:]{1}',
   'prd': '[.]{1}',
   'pnc': '[`=[\]\\\\;\',/~!@#$%^&*()_+{}|"<>?]',
-  'src': 'src: /', # for prefix testing
-  'dst': 'dest: /' # for prefix testing
+  'src': 'src:', # for prefix testing
+  'dst': 'dest:' # for prefix testing
 }
 
+# TODO use-case for FE: one time use (1 FE / extraction)? or 1 FE / project?
 class FieldExtractor:
 
-  # TODO set lexer with hierarchy
   def __init__(self, fields, lexer=None):
-    self.fields = fields
+    self.fields = set(fields)
+    self.aux_fields = set()
+    self.connections = {}
 
+    self.lexer = Lexer(default_types)
     if lexer:
       self.lexer = lexer
-    else:
-      self.lexer = Lexer(default_types)
 
-    self.phi = phi
     self.hmm = None
     self.x_translator = None
     self.y_translator = None
 
-  def train(self, txt_records, txt_labels=None):
-    Ti = Lexer.pad(self.lexer.tokenize_all(txt_records))
-    X_obj = featurize(Ti, self.phi)
-    X, v, self.x_translator = numerical(X_obj)
+    self.phi = phi
 
-    if txt_labels:
-      To = self.lexer.tokenize_all(txt_labels)
-      Y_obj = labels(Ti, To, self.fields)
-      Y, k, self.y_translator = numerical(Y_obj)
-      self.hmm = HMM(k, v)
-      self.hmm.train(X,Y)
-      #print self.hmm.start_p
-      #print self.hmm.trans_p
-      #print self.hmm.emit_p
-    else:
-      raise NotImplementedError()
+  # TODO record-by-record training
+  def train(self, training_set):
+    '''Trains the underlying Hidden Markov Model
+        @param training_set is a list of training pairs tuples: [(txt, extraction),...]
+    '''
+    # separate into X,Y for HMM training
+    txt_records, extraction_examples = [], []
+    for txt_record, extraction_example in training_set:
+      txt_records.append(txt_record)
+      extraction_examples.append(extraction_example)
 
-  def extract(self, txt_records):
-    # ingest test data
-    unpadded = self.lexer.tokenize_all(txt_records)
-    T_test = Lexer.pad(unpadded)
-    X_obj_test = featurize(T_test, self.phi)
-    X_test, _, _ = numerical(X_obj_test, self.x_translator)
+    # txt_records -> X
+    Ti = Lexer.pad_all(self.lexer.tokenize_all(txt_records))
+    X_obj = featurize_all(Ti, self.phi)
+    X, v, self.x_translator = numerical_all(X_obj)
 
-    # viterbi
-    Z = []
-    for x_test in X_test:
-      Z.append(self.hmm.viterbi(x_test))
+    # extraction_examples -> Y
+    To = [{field_name:self.lexer.tokenize_all(extracted_field, stop=False) for field_name,extracted_field in o.iteritems()} for o in extraction_examples]
+    Y_obj = extraction2label_all(Ti, To, self._states(), self.connections)
+    Y, k, self.y_translator = numerical_all(Y_obj)
 
-    # chunk fields
-    extraction = extract_from_labels(Z, T_test)
+    # HMM
+    self.hmm = HMM(k, v)
+    # TODO consider stream training in HMM
+    self.hmm.train(X,Y)
 
-    # filter
-    return self._field_filter(extraction)
+    #print self.hmm.start_p
+    #print self.hmm.trans_p
+    #print self.hmm.emit_p
+
+  def extract(self, txt_record):
+    '''Runs the Viterbi algorithm on the tokens made from @param txt_record
+        @param txt_record is the raw text as a string
+        @returns a tuple containing: 1) dictionary mapping field names to a list of the viterbi MLE string(s) corresponding to the field, 2) the confidence of the Field extractor as a probability
+    '''
+    # digest input
+    t_test = self.lexer.tokenize(txt_record)
+    x_obj_test = featurize(t_test, self.phi)
+    x_test = numerical(x_obj_test, self.x_translator)
+
+    # ML guess
+    z, confidence = self.hmm.viterbi(x_test)
+
+    # group by internal field number
+    fields = group_fields(z, t_test)
+
+    # translate field numbers to field names
+    raw_extraction = {}
+    for field_num, field in fields.iteritems():
+      raw_extraction[self.y_translator.get_val(field_num)] = field
+
+    # TODO normalize confidences
+    return raw_extraction, confidence
 
   # subroutines
   #############
 
-  def _field_filter(self, csv):
-    filtered_csv = []
+  # TODO should this be part of the API? when should this be called?
+  def _field_filter(self, extraction):
     indices = [self.y_translator.get_num(attr) for attr in self.fields]
-    for row in csv:
-      filtered_csv.append([row[j] for j in indices])
-    return filtered_csv
+    return [extraction[j] for j in indices]
+
+  def _states(self):
+    states = []
+    states.extend(self.fields)
+    states.extend(self.aux_fields)
+    return states
+
+# TODO move these into their own file?
+# utils
+
+def find(x, pattern):
+  i = 0
+  while i <= len(x) - len(pattern):
+    if x[i:i + len(pattern)] == pattern:
+      return i
+    i += 1
+  return -1
+
+# TODO modularize this function
+def extraction2label(x, e, states, connections):
+  labels = [None] * len(x)
+
+  # label fields and aux fields
+  for state,extraction in e.iteritems():
+    i = find(x, extraction)
+    labels[i : i + len(extraction)] = [state] * len(extraction)
+
+  # compute start,stop indices for all potential connections
+  links = _links(labels)
+
+  # fill in links with corresponding connections
+  for (from_state,to_state), (i,j) in links.iteritems():
+    if to_state in connections.get(from_state, set()):
+      labels[i:j] = ['{}-{}'.format(from_state, to_state)] * (j - i)
+  return labels
+
+# helper function for extraction2label
+def _links(labels):
+  '''Finds all sequences of None within @param labels that are wrapped by non-None values
+    @param labels is a list of field names as strings
+    @returns a dictionary mapping the 2 states surrounding a None-sequence to the indices for that None-sequence
+  '''
+  links = {}
+  index = 0
+  while index < len(labels):
+    label = labels[index]
+    if label is None and index != 0:
+      none_index = index
+      while none_index < len(labels):
+        if labels[none_index] is not None:
+          break
+        none_index += 1
+      if none_index >= len(labels):
+        break
+      from_state = labels[index - 1]
+      to_state = labels[none_index]
+      links[(from_state, to_state)] = (index, none_index)
+      index = none_index
+    else:
+      index += 1
+  return links
+
+# TODO OBSOLETE condition: record-by-record architecture
+def extraction2label_all(Tx, Te, states, connections):
+  Y = []
+  assert len(Tx) == len(Te)
+  for i in range(len(Tx)):
+    x_i = Tx[i]
+    e_i = Te[i]
+    Y.append(extraction2label(x_i, e_i, states, connections))
+  return Y
 
 # chunk
 #######
 
 def group_fields(z, x):
   fields = {}
-  field = []
-  field_num = None
-  for t in range(len(x)):
-    x_t = x[t]
-    if len(field) == 0:
-      field.append(x_t)
-      field_num = z[t]
-    elif z[t] == field_num:
-      field.append(x_t)
+  field = [x[0]]
+  for t in range(1,len(x)):
+    field_id = z[t - 1]
+    if z[t] == field_id:
+      field.append(x[t])
     else:
-      fields[field_num] = ''.join([token.string for token in field])
-      field = [x_t]
-      field_num = z[t]
+      fields.setdefault(field_id, []).append(Lexer.detokenize(field))
+      field = [x[t]]
+  # ignore dangling field as it always corresponds to STOP
+  #fields.setdefault(z[-1], []).append(Lexer.detokenize(field))
   return fields
-
-def extract_from_labels(Z, Tx):
-  extraction = []
-  for i in range(len(Z)):
-    z_i = Z[i]
-    tx_i = Tx[i]
-    row = []
-    fields = group_fields(z_i, tx_i)
-    for j in range(max(chain.from_iterable(Z))+1):
-      row.append(fields.get(j,''))
-    extraction.append(row)
-  return extraction
-

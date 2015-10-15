@@ -2,8 +2,9 @@ import re
 
 class Lexer:
 
+  # TODO OBSOLETE condition: record-by-record architecture
   @staticmethod
-  def pad(TX):
+  def pad_all(TX):
     for tx in TX:
       tx.append(Token.stop())
 
@@ -17,12 +18,16 @@ class Lexer:
       tx.extend([Token.stop()] * pad_length)
     return TX
 
+  @staticmethod
+  def detokenize(tokens):
+    return ''.join([token.string for token in tokens])
+
   def __init__(self, types, unk=True):
     self.types = types
     if unk:
       self.unk = 'unk'
 
-  def tokenize(self, text):
+  def tokenize(self, text, stop=True):
     tokens = []
     i = 0
     while i < len(text):
@@ -43,18 +48,19 @@ class Lexer:
         i += 1
       else:
         raise ValueError('{} did not match any types. Could not tokenize'.format(text[i:]))
-    #print 'tokenizing:',text
-    #print 'tokens:', tokens
+    if stop:
+      tokens.append(Token.stop())
     return tokens
 
-  def tokenize_all(self, text):
+  # TODO OBSOLETE condition: record-by-record architecture
+  def tokenize_all(self, text, stop=True):
     if type(text) == str or type(text) == unicode:
-      tokens_list = self.tokenize(text)
+      tokens_list = self.tokenize(text, stop)
       return tokens_list
     elif type(text) == list or type(text) == tuple:
       tokens_list = []
       for subtext in text:
-        tokens_list.append(self.tokenize_all(subtext))
+        tokens_list.append(self.tokenize_all(subtext, stop))
       return tokens_list
     else:
       raise TypeError('Unrecognized type: ' + str(type(text)))

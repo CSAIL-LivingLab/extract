@@ -68,6 +68,7 @@ class HMM:
   # parameter estimation
   ######################
 
+  # TODO OBSOLETE condition: record-by-record architecture
   def train(self, X,Y=None):
     X = np.array(X)
     Y = np.array(Y)
@@ -104,7 +105,6 @@ class HMM:
   # most likely sequence of hidden states
   #######################################
 
-  # TODO debug... probabilities currently under the lowerbound
   def viterbi(self, obs):
     V = [{}]
     path = {}
@@ -131,8 +131,7 @@ class HMM:
       n = t
     #print_dptable(V)
     (prob, state) = max((V[n][y], y) for y in range(self.k))
-    #return (prob, path[state])
-    return path[state]
+    return path[state], prob[0]
 
 def print_dptable(V):
     s = "    " + " ".join(("%7d" % i) for i in range(len(V))) + "\n"
