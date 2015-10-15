@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='extract',
-  version='0.9',
+  version='0.10',
   description='field extraction from semi-structured textual data',
   long_description=open('README.md').read(),
   url='https://github.com/pcattori/extract',
