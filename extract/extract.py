@@ -1,10 +1,6 @@
-from .hmm import HMM
-from .learn import featurize, numerical
-from .learn import featurize_all, numerical_all
+from .hmm import HiddenMarkovModel as HMM
+from .learn import featurize, NumericalTranslator, HiddenMarkovModelStatistics as HMM_Statistics
 from .lex import Lexer
-
-def phi(t):
-  return t.typ
 
 # TODO set lexer with hierarchy
 default_types = {
@@ -21,66 +17,68 @@ default_types = {
   'dst': 'dest:' # for prefix testing
 }
 
-# TODO use-case for FE: one time use (1 FE / extraction)? or 1 FE / project?
+# Use-case: 1 FE / extraction
 class FieldExtractor:
 
-  def __init__(self, fields, lexer=None):
-    self.fields = set(fields)
-    self.aux_fields = set()
-    self.connections = {}
+  # TODO custom tokens dictionary as argument? or via lexer arg?
+  def __init__(self, fields, aux_fields=[], connections={}, lexer=None):
+    self._garbage_field = None
+    self._fields = set(fields)
+    self._aux_fields = set(aux_fields)
+    self._connections = connections
 
-    self.lexer = Lexer(default_types)
+    self._lexer = Lexer(default_types)
     if lexer:
-      self.lexer = lexer
+      self._lexer = lexer
 
-    self.hmm = None
-    self.x_translator = None
-    self.y_translator = None
+    # TODO k,v should account for STOP, garbage state
+    k = len(self._states())
+    v = len(self._outputs())
+    print 'k:',k,'v:',v
+    self._hmm = HMM(k,v)
+    self._hmm_stats = HMM_Statistics(k,v)
+    self._x_translator = NumericalTranslator(self._outputs())
+    self._y_translator = NumericalTranslator(self._states())
 
-    self.phi = phi
+  def train(self, txt_record_example, extraction_example):
 
-  # TODO record-by-record training
-  def train(self, training_set):
-    '''Trains the underlying Hidden Markov Model
-        @param training_set is a list of training pairs tuples: [(txt, extraction),...]
-    '''
-    # separate into X,Y for HMM training
-    txt_records, extraction_examples = [], []
-    for txt_record, extraction_example in training_set:
-      txt_records.append(txt_record)
-      extraction_examples.append(extraction_example)
+    # txt_record -> x
+    x_tokens = self._lexer.tokenize(txt_record_example)
+    x_obj = featurize(x_tokens)
+    x = self._x_translator.numerical(x_obj)
+    print 'x:',x, len(x)
 
-    # txt_records -> X
-    Ti = Lexer.pad_all(self.lexer.tokenize_all(txt_records))
-    X_obj = featurize_all(Ti, self.phi)
-    X, v, self.x_translator = numerical_all(X_obj)
+    # extraction_example -> y
+    y_tokens = {}
+    for field_name, extracted_field in extraction_example.iteritems():
+      y_tokens[field_name] = self._lexer.tokenize(extracted_field, stop=False)
 
-    # extraction_examples -> Y
-    To = [{field_name:self.lexer.tokenize_all(extracted_field, stop=False) for field_name,extracted_field in o.iteritems()} for o in extraction_examples]
-    Y_obj = extraction2label_all(Ti, To, self._states(), self.connections)
-    Y, k, self.y_translator = numerical_all(Y_obj)
+    all_fields = set.union(self._fields, self._aux_fields)
+    y_obj = extraction2label(x_tokens, y_tokens, all_fields, self._connections)
+    y = self._y_translator.numerical(y_obj)
+    print 'y:',y
 
+    # include x,y in statistics
+    self._hmm_stats.include(x, y)
+
+  def finish_training(self):
     # HMM
-    self.hmm = HMM(k, v)
-    # TODO consider stream training in HMM
-    self.hmm.train(X,Y)
-
-    #print self.hmm.start_p
-    #print self.hmm.trans_p
-    #print self.hmm.emit_p
+    self._hmm.set_params(*self._hmm_stats.normalize())
+    print self._hmm._start_p
+    print self._hmm._trans_p
+    print self._hmm._emit_p
 
   def extract(self, txt_record):
-    '''Runs the Viterbi algorithm on the tokens made from @param txt_record
-        @param txt_record is the raw text as a string
-        @returns a tuple containing: 1) dictionary mapping field names to a list of the viterbi MLE string(s) corresponding to the field, 2) the confidence of the Field extractor as a probability
+    '''Extracts pieces of text corresponding to fields.
+    Returns a tuple with a dictionary mapping field names to a list of matching extractions and a confidence in the extraction as a probability.
     '''
     # digest input
-    t_test = self.lexer.tokenize(txt_record)
-    x_obj_test = featurize(t_test, self.phi)
-    x_test = numerical(x_obj_test, self.x_translator)
+    t_test = self._lexer.tokenize(txt_record)
+    x_obj_test = featurize(t_test)
+    x_test = self._x_translator.numerical(x_obj_test)
 
     # ML guess
-    z, confidence = self.hmm.viterbi(x_test)
+    z, confidence = self._hmm.viterbi(x_test)
 
     # group by internal field number
     fields = group_fields(z, t_test)
@@ -88,7 +86,7 @@ class FieldExtractor:
     # translate field numbers to field names
     raw_extraction = {}
     for field_num, field in fields.iteritems():
-      raw_extraction[self.y_translator.get_val(field_num)] = field
+      raw_extraction[self._y_translator.word(field_num)] = field
 
     # TODO normalize confidences
     return raw_extraction, confidence
@@ -96,19 +94,29 @@ class FieldExtractor:
   # subroutines
   #############
 
-  # TODO should this be part of the API? when should this be called?
-  def _field_filter(self, extraction):
-    indices = [self.y_translator.get_num(attr) for attr in self.fields]
-    return [extraction[j] for j in indices]
+  def _field_filter(self, raw_extraction):
+    filtered_extraction = {}
+    for field_name,field_extraction in raw_extraction.items():
+      if field_name in self._fields:
+        filtered_extraction[field_name] = field_extraction
+    return filtered_extraction
 
   def _states(self):
-    states = []
-    states.extend(self.fields)
-    states.extend(self.aux_fields)
+    states = [self._garbage_field]
+    states.extend(self._fields)
+    states.extend(self._aux_fields)
+    for from_state, to_states in self._connections.iteritems():
+      states.extend(['{}2{}'.format(from_state, to_state) for to_state in to_states])
     return states
 
-# TODO move these into their own file?
+  def _outputs(self):
+    outputs = ['STOP'] # stop tokens
+    outputs.extend(self._lexer.types.keys())
+    return outputs
+
+# TODO move utils into their own file?
 # utils
+#######
 
 def find(x, pattern):
   i = 0
@@ -119,12 +127,12 @@ def find(x, pattern):
   return -1
 
 # TODO modularize this function
-def extraction2label(x, e, states, connections):
-  labels = [None] * len(x)
+def extraction2label(x_tokens, y_tokens, states, connections):
+  labels = [None] * len(x_tokens)
 
   # label fields and aux fields
-  for state,extraction in e.iteritems():
-    i = find(x, extraction)
+  for state,extraction in y_tokens.iteritems():
+    i = find(x_tokens, extraction)
     labels[i : i + len(extraction)] = [state] * len(extraction)
 
   # compute start,stop indices for all potential connections
@@ -133,7 +141,7 @@ def extraction2label(x, e, states, connections):
   # fill in links with corresponding connections
   for (from_state,to_state), (i,j) in links.iteritems():
     if to_state in connections.get(from_state, set()):
-      labels[i:j] = ['{}-{}'.format(from_state, to_state)] * (j - i)
+      labels[i:j] = ['{}2{}'.format(from_state, to_state)] * (j - i)
   return labels
 
 # helper function for extraction2label
@@ -161,16 +169,6 @@ def _links(labels):
     else:
       index += 1
   return links
-
-# TODO OBSOLETE condition: record-by-record architecture
-def extraction2label_all(Tx, Te, states, connections):
-  Y = []
-  assert len(Tx) == len(Te)
-  for i in range(len(Tx)):
-    x_i = Tx[i]
-    e_i = Te[i]
-    Y.append(extraction2label(x_i, e_i, states, connections))
-  return Y
 
 # chunk
 #######

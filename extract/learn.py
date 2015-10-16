@@ -1,60 +1,72 @@
-import itertools
 import numpy as np
+from .linalg import normalize_cols, normalize_rows
 
-def featurize(tx, phi):
-  return [phi(token) for token in tx]
+def featurize(tokens, phi=None):
+  def typ(t):
+    return t.typ
+  if not phi:
+    phi = typ
+  return [phi(token) for token in tokens]
 
-class Translator:
+class NumericalTranslator:
 
-  def __init__(self):
-    self.counter = 0
-    self.val2num = {}
-    self.num2val = {}
+  def __init__(self, words):
+    num = 0
+    self._num2word = {}
+    self._word2num = {}
+    for word in words:
+      self._num2word[num] = word
+      self._word2num[word] = num
+      num += 1
 
-  def add(self, val):
-    past_num = self.val2num.get(val, None)
-    if past_num:
-      del self.val2num[val]
-    self.val2num[val] = self.counter
-    self.num2val[self.counter] = val
-    self.counter += 1
+  def numerical(self,tokens):
+    w = [self.num(token) for token in tokens]
+    assert None not in w
+    return w
 
-  def remove(self, val):
-    num = self.val2num[val]
-    del self.val2num[val]
-    del self.num2val[num]
+  def num(self, word):
+    return self._word2num.get(word, None)
 
-  def remove_num(self, num):
-    val = self.num2val[num]
-    del self.num2val[num]
-    del self.val2num[val]
+  def word(self, num):
+    return self._num2word.get(num, None)
 
-  def get_val(self, num):
-    return self.num2val.get(num, None)
+class HiddenMarkovModelStatistics:
 
-  def get_num(self, val):
-    # return -1 to signal unseen value
-    return self.val2num.get(val, -1)
+  def __init__(self, k, v):
+    self.k = k
+    self.v = v
 
-def numerical(tx, translator):
-  return [translator.get_num(tx_i) for tx_i in tx]
+    self.s_count = np.zeros(shape=(self.k,1))
+    self.t_count = np.zeros(shape=(self.k,self.k))
+    self.e_count = np.zeros(shape=(self.k,self.v))
 
-# TODO OBSOLETE condition: record-by-record architecture
-def featurize_all(TX, phi):
-  X = []
-  for tx in TX:
-    X.append(featurize(tx,phi))
-  return X
+  def include(self, x, y):
+    self.s_count += self._start_count(y)
+    self.t_count += self._trans_count(y)
+    self.e_count += self._emit_count(x,y)
 
-# TODO OBSOLETE condition: record-by-record architecture
-def numerical_all(TX, translator=None):
-  X = []
-  vals = set()
-  if not translator:
-    translator = Translator()
-    vals = set(itertools.chain.from_iterable(TX))
-    for val in vals:
-      translator.add(val)
-  for tx in TX:
-    X.append(numerical(tx, translator))
-  return np.array(X), len(vals), translator
+  def normalize(self):
+    S = normalize_cols(self.s_count)
+    T = normalize_rows(self.t_count)
+    E = normalize_rows(self.e_count)
+    return S,T,E
+
+  # convenience
+  #############
+
+  def _start_count(self, y):
+    s_count = np.zeros(shape=(self.k, 1))
+    s_count[y[0]] = 1
+    return s_count
+
+  def _trans_count(self, y):
+    t_count = np.zeros(shape=(self.k, self.k))
+    for t in range(len(y) - 1):
+      t_count[y[t], y[t+1]] += 1
+    return t_count
+
+  def _emit_count(self, x, y):
+    e_count = np.zeros(shape=(self.k, self.v))
+    for t in range(len(y)):
+      e_count[y[t], x[t]] += 1
+    return e_count

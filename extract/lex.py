@@ -2,22 +2,6 @@ import re
 
 class Lexer:
 
-  # TODO OBSOLETE condition: record-by-record architecture
-  @staticmethod
-  def pad_all(TX):
-    for tx in TX:
-      tx.append(Token.stop())
-
-    longest = 0
-    for tx in TX:
-      if len(tx) > longest:
-        longest = len(tx)
-
-    for tx in TX:
-      pad_length = longest - len(tx) + 1
-      tx.extend([Token.stop()] * pad_length)
-    return TX
-
   @staticmethod
   def detokenize(tokens):
     return ''.join([token.string for token in tokens])
@@ -51,19 +35,6 @@ class Lexer:
     if stop:
       tokens.append(Token.stop())
     return tokens
-
-  # TODO OBSOLETE condition: record-by-record architecture
-  def tokenize_all(self, text, stop=True):
-    if type(text) == str or type(text) == unicode:
-      tokens_list = self.tokenize(text, stop)
-      return tokens_list
-    elif type(text) == list or type(text) == tuple:
-      tokens_list = []
-      for subtext in text:
-        tokens_list.append(self.tokenize_all(subtext, stop))
-      return tokens_list
-    else:
-      raise TypeError('Unrecognized type: ' + str(type(text)))
 
 class Token:
 
