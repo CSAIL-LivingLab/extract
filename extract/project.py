@@ -1,26 +1,51 @@
 import csv
+import pickle
 import sqlite3 as lite
 import shutil
 import sys
 from os import mkdir, path, walk
 from .extract import FieldExtractor
 
-# filenames
-PROJECT_DB = 'project.db'
-FIELDS_CSV = 'fields.csv'
+# TODO should this module be outside the extract package?
 
-# table names
-TXT_TABLE = 'txt'
-LABEL_TABLE = 'label'
-EXTRACTION_TABLE = 'extraction'
+# TODO keep info in db table instead of python obj?
+class ProjectInfo:
 
-# column names
-RECORD_ID = 'record_id'
-TXT_RECORD = 'txt_record'
+  def __init__(self):
+    # TODO include additive smoothing param alpha?
+    self.fields = set([])
+    self.aux_fields = set([])
+    self.connections = {}
+    self.custom_tokens = {}
 
 class Project:
+  # filenames
+  _PROJECT_DB = 'project.db'
+  _INFO_PKL = 'info.pkl'
 
+  # table names
+  _TXT = 'txt'
+  _LABELS = 'labels'
+  _EXTRACTIONS = 'extractions'
+
+  # column names
+  _RECORD_ID, _RECORD_ID_TYPE = 'record_id', 'INT'
+  _TXT_RECORD, _TXT_RECORD_TYPE = 'txt_record', 'TEXT'
+  _CONFIDENCE, _CONFIDENCE_TYPE = 'confidence', 'FLOAT'
+
+  # projects directory
   PROJECTS = 'projects'
+
+  def __init__(self, name, info=None):
+    self.name = name
+
+    if info:
+      self.info = info
+      self._save_info()
+    else:
+      self.info = self._load_info()
+
+    self._db = SqlDatabase(path.join(self._path(), Project._PROJECT_DB))
 
   @staticmethod
   def new_project(name, f):
@@ -29,17 +54,14 @@ class Project:
     if path.exists(project_path):
       raise ValueError("Project with name '{}' already exists".format(name))
 
-    project = Project(name)
-    mkdir(project.path)
+    mkdir(path.join(Project.PROJECTS, name))
+    project = Project(name, ProjectInfo())
 
-    # txt table
-    txt_header = [
-        '{record_id} int'.format(record_id=RECORD_ID),
-        '{txt_record} TEXT'.format(txt_record=TXT_RECORD),
-        'PRIMARY KEY ({record_id})'.format(record_id=RECORD_ID)
-    ]
-    create_table(project.db(), TXT_TABLE, txt_header)
-    insert_into(project.db(), TXT_TABLE, enumerate(f))
+    project._create_tables()
+
+    for line_no, line in enumerate(f):
+      record = {Project._RECORD_ID: line_no, Project._TXT_RECORD: line}
+      project._db.insert_into(Project._TXT, record)
 
     return project
 
@@ -68,192 +90,211 @@ class Project:
     project_path = path.join(projects_dir, name)
     shutil.rmtree(project_path)
 
-  def __init__(self, name):
-    self.name = name
-    self.path = path.join(Project.PROJECTS, self.name)
+  # API
+  #####
 
-  def db(self):
-    return path.join(self.path, PROJECT_DB)
+  # TODO keep fields unique, warn user if removing non-existent field
 
-  def get_txt(self):
-    return select_all(self.db(), TXT_TABLE)
-
-  def get_fields(self):
-    fields_path = path.join(self.path, FIELDS_CSV)
-    if not path.exists(fields_path):
-      return None
-    with open(fields_path, 'r') as f:
-      return next(csv.reader(f))
-    #cols = column_names(self.db(), LABEL_TABLE)
-    #return cols[1:] # skip id column
-
-  def set_fields(self, fields):
-    fields_path = path.join(self.path, FIELDS_CSV)
-    with open(fields_path, 'w') as f:
-      csv.writer(f, quoting=csv.QUOTE_ALL).writerow(fields)
-
-    # TODO warn user before dropping table?
-    drop_table(self.db(), LABEL_TABLE)
-    create_table(self.db(), LABEL_TABLE, self.standard_header())
-
-  def get_header(self):
-    fields = self.get_fields()
-    if not fields:
-      return None
-    return [RECORD_ID] + fields
-
-  def standard_header(self, fields=None):
-    if not fields:
-      fields = self.get_fields()
-
-    header = ['{record_id} int'.format(record_id=RECORD_ID)]
+  def add_fields(self, fields):
     for field in fields:
-      header.append('{field} TEXT'.format(field=field))
-    # TODO use FOREIGN KEY instead of PRIMARY KEY
-    header.append('PRIMARY KEY ({record_id})'.format(record_id=RECORD_ID))
-    return header
+      self.info.fields.add(field)
+      self._db.add_column(Project._LABELS, field, 'TEXT')
+      self._db.add_column(Project._EXTRACTIONS, field, 'TEXT')
+    self._save_info()
 
-  def get_labels(self):
-    if not table_exists(self.db(), LABEL_TABLE):
-      return []
-    return select_all(self.db(), LABEL_TABLE)
+  def remove_fields(self, fields):
+    for field in set(fields):
+      self.info.fields.remove(field)
+      self._db.drop_column(Project._LABELS, field)
+      self._db.drop_column(Project._EXTRACTIONS, field)
+    self._save_info()
 
-  def unlabeled_sample(self, n):
-    if not table_exists(self.db(), LABEL_TABLE):
-      return select_all(self.db(), TXT_TABLE)[:n]
+  def add_aux_fields(self, aux_fields):
+    for aux_field in set(aux_fields):
+      self.info.aux_fields.add(aux_field)
+      self._db.add_column(Project._LABELS, aux_field, 'TEXT')
+      self._db.add_column(Project._EXTRACTIONS, aux_field, 'TEXT')
+    self._save_info()
 
-    # SELECT txt.record_id, txt.txt_record
-    # FROM txt, labels
-    # WHERE txt.record_id NOT IN (SELECT record_id FROM labels)
-    # LIMIT n
-    query = 'SELECT {txt}.{record_id},{txt}.{txt_record}'.format(
-        txt=TXT_TABLE, record_id=RECORD_ID, txt_record=TXT_RECORD)
-    query += ' FROM {txt}'.format(
-        txt=TXT_TABLE)
+  def remove_aux_fields(self, aux_fields):
+    for aux_field in set(aux_fields):
+      self.info.aux_fields.remove(aux_field)
+      self._db.drop_column(Project._LABELS, aux_field)
+      self._db.drop_column(Project._EXTRACTIONS, aux_field)
+    self._save_info()
+
+  def add_connections(self, connections):
+    for from_state, to_states in connections.iteritems():
+      self.info.connections[from_state] = self.info.connections.get(from_state, set()) | to_states
+    self._save_info()
+
+  def remove_connections(self, connections):
+    for from_state, to_states in connections.iteritems():
+      self.info.connections[from_state] = self.info.connections.get(from_state, set()) - to_states
+    self._save_info()
+
+  def add_custom_tokens(self, custom_tokens):
+    self.info.custom_tokens.update(custom_tokens)
+    self._save_info()
+
+  def remove_custom_tokens(self, custom_tokens):
+    for token in custom_tokens:
+      if token in self.info.custom_tokens:
+        del self.info.custom_tokens[token]
+    self._save_info()
+
+  def add_training_pair(self, record_id, extraction_example):
+    record = {Project._RECORD_ID: record_id}
+    record.update(extraction_example)
+    self._db.insert_into(Project._LABELS, record)
+
+  def get_unlabeled_sample(self, n):
     label_ids = '(SELECT {record_id} FROM {labels})'.format(
-        record_id=RECORD_ID, labels=LABEL_TABLE)
-    query += ' WHERE {txt}.{record_id} NOT IN {label_ids}'.format(
-        txt=TXT_TABLE, record_id=RECORD_ID, label_ids=label_ids)
+        record_id=Project._RECORD_ID, labels=Project._LABELS)
+
+    query = 'SELECT {record_id},{txt_record}'.format(
+        record_id=Project._RECORD_ID,
+        txt_record=Project._TXT_RECORD)
+    query += ' FROM {txt}'.format(
+        txt=Project._TXT)
+    query += ' WHERE {record_id} NOT IN {label_ids}'.format(
+        record_id=Project._RECORD_ID,
+        label_ids=label_ids)
     query += ' LIMIT {limit}'.format(
         limit=n)
-    return self.safe_query(query)
 
-  def set_labels(self, labels):
-    # labels is a list of tuples : (txt_id, csv_list)
-    # eg. (8, ['2012-04-02', '00:01:56', '127.0.0.1:54321', '127.2.2.67890'])
-    label_records = [[label[0]] + label[1] for label in labels]
-    insert_into(self.db(), LABEL_TABLE, label_records)
-
-  def training_set(self):
-    query = 'SELECT {txt_record},{fields}'.format(txt_record=TXT_RECORD,
-        fields=','.join(self.get_fields()))
-    query += ' FROM {txt},{labels}'.format(
-        txt=TXT_TABLE, labels=LABEL_TABLE)
-    query += ' WHERE {txt}.{record_id}={labels}.{record_id}'.format(
-        txt=TXT_TABLE, record_id=RECORD_ID, labels=LABEL_TABLE)
-
-    X_txt, Y_csv = [], []
-    for training_example in self.safe_query(query):
-      X_txt.append(training_example[0])
-      Y_csv.append(training_example[1:])
-    return X_txt, Y_csv
+    result = None
+    conn = lite.connect(self._db._path)
+    with conn:
+      cur = conn.cursor()
+      cur.execute(query)
+      result = cur.fetchall()
+    conn.close()
+    return result
 
   def extract(self):
-    # create fresh extraction table
-    drop_table(self.db(), EXTRACTION_TABLE)
-    # TODO create with confidence col
-    create_table(self.db(), EXTRACTION_TABLE, self.standard_header())
+    fe = FieldExtractor(
+        fields=self.info.fields,
+        aux_fields=self.info.aux_fields,
+        connections=self.info.connections
+        custom_tokens=self.info.custom_tokens)
 
-    # TODO consider FieldExtractor API
-    fe = FieldExtractor(self.get_fields())
-    fe.train(*self.training_set())
+    for txt_record, extraction_example in self._training_pairs():
+      fe.train(txt_record, extraction_example)
 
-    txt = select_all(self.db(), TXT_TABLE)
-    extractions = fe.extract([txt_record for _,txt_record in txt])
+    for record_id, txt_record in self._txt():
+      extraction = fe.extract(txt_record)
+      record = {Project._RECORD_ID: record_id}
+      record.update(extraction)
+      self.insert_into(Project._EXTRACTIONS, record)
 
-    # TODO stream this??
-    extraction_records = []
-    for i in range(len(txt)):
-      record_id = txt[i][0]
-      extraction_record = [record_id] + extractions[i]
-      extraction_records.append(extraction_record)
+  # convenience
+  #############
 
-    insert_into(self.db(), EXTRACTION_TABLE, extraction_records)
+  def _path(self):
+    return path.join(Project.PROJECTS, self.name)
 
-  def get_extraction(self):
-    if not table_exists(self.db(), EXTRACTION_TABLE):
-      return []
-    # TODO join with txt_table to view txt and extraction side by side?
-    return select_all(self.db(), EXTRACTION_TABLE)
+  def _save_info(self):
+    with open(path.join(self._path(), Project._INFO_PKL), 'wb') as f:
+      pickle.dump(self.info, f)
 
-  def safe_query(self, query):
-    def sql(cur):
-      cur.execute(query)
-      return cur.fetchall()
-    return safe_sql(self.db(), sql)
+  def _load_info(self):
+    with open(path.join(self._path(), Project._INFO_PKL), 'rb') as f:
+      return pickle.load(f)
+
+  def _create_tables(self):
+    self._db.create_table(Project._TXT, [
+        (Project._RECORD_ID, Project._RECORD_ID_TYPE),
+        (Project._TXT_RECORD, Project._TXT_RECORD_TYPE)
+    ])
+    self._db.create_table(Project._LABELS, [
+        (Project._RECORD_ID, Project._RECORD_ID_TYPE)
+    ])
+    self._db.create_table(Project._EXTRACTIONS, [
+        (Project._RECORD_ID, Project._RECORD_ID_TYPE),
+        (Project._CONFIDENCE, Project._CONFIDENCE_TYPE)
+    ])
+
+  def _training_pairs(self):
+    # TODO return iterable of (txt_record, extraction_example)
+    pass
+
+  def _txt(self):
+    # TODO return an iterable of (record_id, txt_record)
+    pass
+
+  def _learn(self, field_extractor):
+    batch_size = 1e3 # tunable
+    batch = cur.fetchmany(batch_size)
+    while batch:
+      for row in batch:
+        # TODO convert row into training pair
+        field_extractor.train(x,e)
+      batch = cur.fetchmany(batch_size)
+    return sum
 
 # Database operations
 #####################
 
-def table_exists(db, tablename):
-  def sql(cur):
-    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='{tablename}'".format(        tablename=tablename))
-    return cur.fetchall()
-  return safe_sql(db, sql)
+class SqlDatabase:
 
-def create_table(db, tablename, columns):
-  def sql(cur):
-    cur.execute('CREATE TABLE {tablename} ({columns})'.format(tablename=tablename,
-        columns=','.join(columns)))
-  safe_sql(db, sql)
+  def __init__(self, path):
+    self._path = path
 
-def drop_table(db, tablename):
-  def sql(cur):
-    cur.execute('DROP TABLE IF EXISTS {tablename}'.format(tablename=tablename))
-  safe_sql(db, sql)
+  # API
+  #####
 
-def table_info(db, tablename):
-  def sql(cur):
-    cur.execute('PRAGMA table_info({tablename})'.format(tablename=tablename))
-    return cur.fetchall()
-  ti = safe_sql(db, sql)
-  return ti
+  def create_table(self, tablename, columns):
+    column_defs = ['{} {}'.format(col_name, col_type) for col_name, col_type in columns]
+    conn = lite.connect(self._path)
+    with conn:
+      cur = conn.cursor()
+      cur.execute('CREATE TABLE {tablename} ({columns})'.format(tablename=tablename,
+          columns=','.join(column_defs)))
+    conn.close()
 
-def column_names(db, tablename):
-  return [column[1] for column in table_info(db, tablename)]
+  def drop_table(self, tablename):
+    conn = lite.connect(self._path)
+    with con:
+      cur = conn.cursor()
+      cur.execute('DROP TABLE IF EXISTS {tablename}'.format(tablename=tablename))
+    conn.close()
 
-def select_all(db, tablename):
-  def sql(cur):
-    cur.execute('SELECT * FROM {tablename}'.format(tablename=tablename))
-    return cur.fetchall()
-  return safe_sql(db, sql)
+  def add_column(self, tablename, column_name, column_type):
+    conn = lite.connect(self._path)
+    with conn:
+      cur = conn.cursor()
+      cur.execute('ALTER TABLE {tablename} ADD {column_name} {column_type}'.format(
+          tablename=tablename, column_name=column_name, column_type=column_type))
+    conn.close()
 
-def insert_into(db, tablename, records):
-  cols = column_names(db, tablename)
-  value_placeholders = ['?'] * len(cols)
-  def sql(cur):
-    for record in records:
+  def drop_column(self, tablename, column_name):
+    conn = lite.connect(self._path)
+    with conn:
+      cur = conn.cursor()
+      cur.execute('ALTER TABLE {tablename} DROP COLUMN {column_name}'.format(
+          tablename=tablename, column_name=column_name))
+    conn.close()
+
+  # TODO more efficient insert? batch insert?
+  def insert_into(self, tablename, record):
+    conn = lite.connect(self._path)
+    with conn:
+      cur = conn.cursor()
+      value_placeholders = ['?'] * len(record)
       insert = "INSERT INTO {tablename} ({column_names}) VALUES ({values})".format(
-          tablename=tablename, column_names=','.join(cols), values=','.join(value_placeholders))
-      cur.execute(insert, record)
-  safe_sql(db, sql)
+          tablename=tablename,
+          column_names=','.join(record.keys()),
+          values=','.join(value_placeholders))
+      cur.execute(insert, record.values())
+    conn.close()
 
-def safe_sql(db, func):
-  con = None
-  result = None
-  try:
-    with lite.connect(db) as con:
-      cur = con.cursor()
-      result = func(cur)
+  # convenience
+  #############
 
-  except lite.Error, e:
-    print "Error %s:" % e.args[0]
-    # TODO should we exit on DB error?
-    sys.exit(1)
-
-  finally:
-    if con:
-      con.close()
-
-  return result
-
+  def _do(self, func):
+    conn = lite.connect(self._path)
+    with conn:
+      cur = conn.cursor()
+      func(cur)
+    conn.close()
