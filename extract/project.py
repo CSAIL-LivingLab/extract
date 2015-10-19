@@ -176,7 +176,7 @@ class Project:
     fe = FieldExtractor(
         fields=self.info.fields,
         aux_fields=self.info.aux_fields,
-        connections=self.info.connections
+        connections=self.info.connections,
         custom_tokens=self.info.custom_tokens)
 
     for txt_record, extraction_example in self._training_pairs():
