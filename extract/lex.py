@@ -11,6 +11,7 @@ class Lexer:
     if unk:
       self.unk = 'unk'
 
+  # TODO match against custom tokens first?
   def tokenize(self, text, stop=True):
     tokens = []
     i = 0

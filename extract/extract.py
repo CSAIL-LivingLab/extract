@@ -13,32 +13,33 @@ default_types = {
   'cln': '[:]{1}',
   'prd': '[.]{1}',
   'pnc': '[`=[\]\\\\;\',/~!@#$%^&*()_+{}|"<>?]',
-  'src': 'src:', # for prefix testing
-  'dst': 'dest:' # for prefix testing
 }
 
 # Use-case: 1 FE / extraction
 class FieldExtractor:
 
-  # TODO custom tokens dictionary as argument? or via lexer arg?
-  def __init__(self, fields, aux_fields=[], connections={}, lexer=None):
-    self._garbage_field = None
+  _GARBAGE_FIELD = None
+  _DEFAULT_ALPHA = 1e-3
+
+  # TODO aggressive smoothing for garbage state, differentiate smoothing between HMM matrices
+  def __init__(self, fields, aux_fields=[], connections={}, custom_tokens={}):
     self._fields = set(fields)
     self._aux_fields = set(aux_fields)
     self._connections = connections
+    self._custom_tokens = custom_tokens
 
-    self._lexer = Lexer(default_types)
-    if lexer:
-      self._lexer = lexer
+    types = default_types.copy()
+    types.update(self._custom_tokens)
+    self._lexer = Lexer(types)
 
-    # TODO k,v should account for STOP, garbage state
     k = len(self._states())
     v = len(self._outputs())
-    print 'k:',k,'v:',v
-    self._hmm = HMM(k,v)
     self._hmm_stats = HMM_Statistics(k,v)
     self._x_translator = NumericalTranslator(self._outputs())
     self._y_translator = NumericalTranslator(self._states())
+
+    # Tunable parameters
+    self.alpha = FieldExtractor._DEFAULT_ALPHA
 
   def train(self, txt_record_example, extraction_example):
 
@@ -46,31 +47,32 @@ class FieldExtractor:
     x_tokens = self._lexer.tokenize(txt_record_example)
     x_obj = featurize(x_tokens)
     x = self._x_translator.numerical(x_obj)
-    print 'x:',x, len(x)
 
     # extraction_example -> y
     y_tokens = {}
     for field_name, extracted_field in extraction_example.iteritems():
       y_tokens[field_name] = self._lexer.tokenize(extracted_field, stop=False)
-
-    all_fields = set.union(self._fields, self._aux_fields)
-    y_obj = extraction2label(x_tokens, y_tokens, all_fields, self._connections)
+    y_obj = extraction2label(x_tokens, y_tokens, self._connections)
     y = self._y_translator.numerical(y_obj)
-    print 'y:',y
 
     # include x,y in statistics
     self._hmm_stats.include(x, y)
 
-  def finish_training(self):
+  def _hmm(self):
     # HMM
-    self._hmm.set_params(*self._hmm_stats.normalize())
-    print self._hmm._start_p
-    print self._hmm._trans_p
-    print self._hmm._emit_p
+    k = len(self._states())
+    v = len(self._outputs())
+    hmm = HMM(k,v)
+    #self._hmm.set_params(*self._hmm_stats.normalize())
+    hmm.set_params(*self._hmm_stats.smoothed_normalize(self.alpha))
+    #print hmm._start_p
+    #print hmm._trans_p
+    #print hmm._emit_p
+    return hmm
 
   def extract(self, txt_record):
     '''Extracts pieces of text corresponding to fields.
-    Returns a tuple with a dictionary mapping field names to a list of matching extractions and a confidence in the extraction as a probability.
+    Returns a tuple with a dictionary mapping field names to a list of matching extraction and a confidence in the extraction as a probability.
     '''
     # digest input
     t_test = self._lexer.tokenize(txt_record)
@@ -78,7 +80,7 @@ class FieldExtractor:
     x_test = self._x_translator.numerical(x_obj_test)
 
     # ML guess
-    z, confidence = self._hmm.viterbi(x_test)
+    z, confidence = self._hmm().viterbi(x_test)
 
     # group by internal field number
     fields = group_fields(z, t_test)
@@ -102,7 +104,7 @@ class FieldExtractor:
     return filtered_extraction
 
   def _states(self):
-    states = [self._garbage_field]
+    states = [FieldExtractor._GARBAGE_FIELD]
     states.extend(self._fields)
     states.extend(self._aux_fields)
     for from_state, to_states in self._connections.iteritems():
@@ -126,8 +128,7 @@ def find(x, pattern):
     i += 1
   return -1
 
-# TODO modularize this function
-def extraction2label(x_tokens, y_tokens, states, connections):
+def extraction2label(x_tokens, y_tokens, connections):
   labels = [None] * len(x_tokens)
 
   # label fields and aux fields

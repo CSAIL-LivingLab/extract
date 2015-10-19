@@ -8,6 +8,10 @@ def featurize(tokens, phi=None):
     phi = typ
   return [phi(token) for token in tokens]
 
+def smooth(v, alpha):
+  '''Additive smoothing'''
+  return (v + alpha) / (sum(v) + len(v) * alpha)
+
 class NumericalTranslator:
 
   def __init__(self, words):
@@ -50,6 +54,15 @@ class HiddenMarkovModelStatistics:
     T = normalize_rows(self.t_count)
     E = normalize_rows(self.e_count)
     return S,T,E
+
+  def smoothed_normalize(self, alpha):
+    S,T,E = self.normalize()
+    S = smooth(S, alpha)
+    for i in range(len(T)):
+      T[i,:] = smooth(T[i,:], alpha)
+    for i in range(len(E)):
+      E[i,:] = smooth(E[i,:], alpha)
+    return S, T, E
 
   # convenience
   #############
