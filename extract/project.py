@@ -260,7 +260,6 @@ class Project:
     record.update(extraction_example)
     return record
 
-
   @staticmethod
   def _extract_record(field_extractor, record_id, txt_record):
     raw_extract, confidence = field_extractor.extract(txt_record)
