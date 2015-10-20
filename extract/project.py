@@ -18,6 +18,7 @@ _INFO_PKL = 'info.pkl'
 # table names
 _TXT = 'txt'
 _LABELS = 'labels'
+# TODO workspace? or final table?
 _EXTRACTIONS = 'extractions'
 
 # column names
@@ -31,12 +32,12 @@ class ProjectInfo:
   Holds meta-data that needs to be persisted for each project
   '''
   def __init__(self):
-    # TODO include additive smoothing param alpha?
     self.fields = set([])
     self.aux_fields = set([])
     self.connections = {}
     self.custom_tokens = {}
 
+    self.alpha = 1e3
 
 class Project:
 
@@ -149,25 +150,17 @@ class Project:
         del self.info.custom_tokens[token]
     self._save_info()
 
-  def add_training_pair(self, record_id, extraction_example):
-    record = {_RECORD_ID: record_id}
-    record.update(extraction_example)
-    self._db.insert_into(_LABELS, [record])
+  def add_training_pairs(self, training_pairs):
+    training_records = (Project._training_record(rid, e) for rid, e in training_pairs)
+    self._db.insert_into(_LABELS, training_records)
 
   def get_unlabeled_sample(self, n):
-    label_ids = '(SELECT {record_id} FROM {labels})'.format(
-        record_id=_RECORD_ID, labels=_LABELS)
+    subquery = '(SELECT {record_id} FROM {labels})'.format(record_id=_RECORD_ID, labels=_LABELS)
 
-    query = 'SELECT {record_id},{txt_record}'.format(
-        record_id=_RECORD_ID,
-        txt_record=_TXT_RECORD)
-    query += ' FROM {txt}'.format(
-        txt=_TXT)
-    query += ' WHERE {record_id} NOT IN {label_ids}'.format(
-        record_id=_RECORD_ID,
-        label_ids=label_ids)
-    query += ' LIMIT {limit}'.format(
-        limit=n)
+    query = 'SELECT {record_id},{txt_record}'.format(record_id=_RECORD_ID, txt_record=_TXT_RECORD)
+    query += ' FROM {txt}'.format(txt=_TXT)
+    query += ' WHERE {record_id} NOT IN {subquery}'.format(record_id=_RECORD_ID,subquery=subquery)
+    query += ' LIMIT {limit}'.format(limit=n)
 
     return self._db.sql([(query, ())])
 
@@ -178,18 +171,25 @@ class Project:
         connections=self.info.connections,
         custom_tokens=self.info.custom_tokens)
 
+    fe.alpha = self.info.alpha
+
     for training_pair in self._training_pairs():
       txt_record, extraction_example = training_pair
       fe.train(txt_record, extraction_example)
 
-    # TODO streamify
-    for record_id, txt_record in self._txt():
-      extraction, confidence = fe.extract(txt_record)
-      extraction = {field_name: extracted[0] for field_name, extracted in extraction.iteritems()}
-      record = {_RECORD_ID: record_id, _CONFIDENCE: confidence}
-      record.update(fe._all_field_filter(extraction))
-      # TODO check for multiple matches
-      self._db.insert_into(_EXTRACTIONS, [record])
+    extraction_records = (Project._extract_record(fe, rid, txt_r) for rid, txt_r in self._txt())
+    self._db.insert_into(_EXTRACTIONS, extraction_records)
+
+  def extractions(self):
+    all_fields = list(self.info.fields | self.info.aux_fields)
+    query = 'SELECT {record_id},{confidence},{all_fields}'.format(
+        record_id=_RECORD_ID,
+        confidence=_CONFIDENCE,
+        all_fields=','.join(all_fields))
+    query += ' FROM {extractions}'.format(extractions=_EXTRACTIONS)
+    extract_records = self._db.sql([(query, ())])
+    attrs = [_RECORD_ID, _CONFIDENCE] + all_fields
+    return (Project._load_record(ext_r, attrs, unpkl=all_fields) for ext_r in extract_records)
 
   # convenience
   #############
@@ -206,6 +206,7 @@ class Project:
       return pickle.load(f)
 
   def _create_tables(self):
+    # TODO primary key? foreign key?
     self._db.create_table(_TXT, [
         (_RECORD_ID, _RECORD_ID_TYPE),
         (_TXT_RECORD, _TXT_RECORD_TYPE)
@@ -219,7 +220,7 @@ class Project:
     ])
 
   def _training_pairs(self):
-    all_fields = self.info.fields | self.info.aux_fields
+    all_fields = list(self.info.fields | self.info.aux_fields)
     query = 'SELECT {txt_record},{all_fields}'.format(
         txt_record=_TXT_RECORD,
         all_fields=','.join(all_fields))
@@ -228,13 +229,48 @@ class Project:
     query += ' WHERE {txt}.{record_id}={labels}.{record_id}'.format(
         txt=_TXT, record_id=_RECORD_ID, labels=_LABELS)
     training_records = self._db.sql([(query, ())])
+
     split_records = ((tr[0], tr[1:]) for tr in training_records)
-    return ((rid, dict(zip(all_fields, ee))) for rid, ee in split_records)
+    return ((txt_r, dict(zip(all_fields, e))) for txt_r, e in split_records)
 
   def _txt(self):
     all_txt = 'SELECT {record_id},{txt_record} FROM {txt}'.format(
         record_id=_RECORD_ID, txt_record=_TXT_RECORD, txt=_TXT)
     return self._db.sql([(all_txt, ())])
+
+  # TODO reconsider record transformations more generally
+
+  @staticmethod
+  def _training_record(record_id, extraction_example):
+    record = {_RECORD_ID: record_id}
+    record.update(extraction_example)
+    return record
+
+
+  @staticmethod
+  def _extract_record(field_extractor, record_id, txt_record):
+    raw_extract, confidence = field_extractor.extract(txt_record)
+    record = {_RECORD_ID: record_id, _CONFIDENCE: confidence}
+    extracted = {field: pickle.dumps(extract) for field, extract in raw_extract.iteritems()}
+    record.update(field_extractor._all_field_filter(extracted))
+    return record
+
+  @staticmethod
+  def _load_record(record, attrs, unpkl=[]):
+    d = dict(zip(attrs, record))
+    for key, val in d.iteritems():
+      if key in unpkl and val is not None:
+        d[key] = pickle.loads(val)
+    return d
+
+  # TODO warn if we see any records that have more than 1 match
+  def _multiple_match(self, extract_map):
+    all_fields = self.info.fields | self.info.aux_fields
+    mm = {}
+    for attr, extract in extract_map:
+      if attr in all_fields and len(extract) > 1:
+        mm[attr] = extract
+    return mm
 
 # Database operations
 #####################
