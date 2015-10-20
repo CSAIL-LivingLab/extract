@@ -275,8 +275,6 @@ class SqlDatabase:
     with conn:
       cur = conn.cursor()
       for query, params in queries:
-        print 'query:', query
-        print 'params:', params
         cur.execute(query, params)
       return SqlDatabase.fetch(cur)
     conn.close()
