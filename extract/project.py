@@ -8,9 +8,28 @@ from .extract import FieldExtractor
 
 # TODO should this module be outside the extract package?
 
+# Constants
+###########
+
+# filenames
+_PROJECT_DB = 'project.db'
+_INFO_PKL = 'info.pkl'
+
+# table names
+_TXT = 'txt'
+_LABELS = 'labels'
+_EXTRACTIONS = 'extractions'
+
+# column names
+_RECORD_ID, _RECORD_ID_TYPE = 'record_id', 'INT'
+_TXT_RECORD, _TXT_RECORD_TYPE = 'txt_record', 'TEXT'
+_CONFIDENCE, _CONFIDENCE_TYPE = 'confidence', 'FLOAT'
+
 # TODO keep info in db table instead of python obj?
 class ProjectInfo:
-
+  '''
+  Holds meta-data that needs to be persisted for each project
+  '''
   def __init__(self):
     # TODO include additive smoothing param alpha?
     self.fields = set([])
@@ -18,20 +37,8 @@ class ProjectInfo:
     self.connections = {}
     self.custom_tokens = {}
 
+
 class Project:
-  # filenames
-  _PROJECT_DB = 'project.db'
-  _INFO_PKL = 'info.pkl'
-
-  # table names
-  _TXT = 'txt'
-  _LABELS = 'labels'
-  _EXTRACTIONS = 'extractions'
-
-  # column names
-  _RECORD_ID, _RECORD_ID_TYPE = 'record_id', 'INT'
-  _TXT_RECORD, _TXT_RECORD_TYPE = 'txt_record', 'TEXT'
-  _CONFIDENCE, _CONFIDENCE_TYPE = 'confidence', 'FLOAT'
 
   # projects directory
   PROJECTS = 'projects'
@@ -45,7 +52,7 @@ class Project:
     else:
       self.info = self._load_info()
 
-    self._db = SqlDatabase(path.join(self._path(), Project._PROJECT_DB))
+    self._db = SqlDatabase(path.join(self._path(), _PROJECT_DB))
 
   @staticmethod
   def new_project(name, f):
@@ -59,9 +66,8 @@ class Project:
 
     project._create_tables()
 
-    for line_no, line in enumerate(f):
-      record = {Project._RECORD_ID: line_no, Project._TXT_RECORD: line}
-      project._db.insert_into(Project._TXT, record)
+    txt_records = ({_RECORD_ID: line_no, _TXT_RECORD: line} for line_no, line in enumerate(f))
+    project._db.insert_into(_TXT, txt_records)
 
     return project
 
@@ -98,29 +104,29 @@ class Project:
   def add_fields(self, fields):
     for field in fields:
       self.info.fields.add(field)
-      self._db.add_column(Project._LABELS, field, 'TEXT')
-      self._db.add_column(Project._EXTRACTIONS, field, 'TEXT')
+      self._db.add_column(_LABELS, field, 'TEXT')
+      self._db.add_column(_EXTRACTIONS, field, 'TEXT')
     self._save_info()
 
   def remove_fields(self, fields):
     for field in set(fields):
       self.info.fields.remove(field)
-      self._db.drop_column(Project._LABELS, field)
-      self._db.drop_column(Project._EXTRACTIONS, field)
+      self._db.drop_column(_LABELS, field)
+      self._db.drop_column(_EXTRACTIONS, field)
     self._save_info()
 
   def add_aux_fields(self, aux_fields):
     for aux_field in set(aux_fields):
       self.info.aux_fields.add(aux_field)
-      self._db.add_column(Project._LABELS, aux_field, 'TEXT')
-      self._db.add_column(Project._EXTRACTIONS, aux_field, 'TEXT')
+      self._db.add_column(_LABELS, aux_field, 'TEXT')
+      self._db.add_column(_EXTRACTIONS, aux_field, 'TEXT')
     self._save_info()
 
   def remove_aux_fields(self, aux_fields):
     for aux_field in set(aux_fields):
       self.info.aux_fields.remove(aux_field)
-      self._db.drop_column(Project._LABELS, aux_field)
-      self._db.drop_column(Project._EXTRACTIONS, aux_field)
+      self._db.drop_column(_LABELS, aux_field)
+      self._db.drop_column(_EXTRACTIONS, aux_field)
     self._save_info()
 
   def add_connections(self, connections):
@@ -144,33 +150,26 @@ class Project:
     self._save_info()
 
   def add_training_pair(self, record_id, extraction_example):
-    record = {Project._RECORD_ID: record_id}
+    record = {_RECORD_ID: record_id}
     record.update(extraction_example)
-    self._db.insert_into(Project._LABELS, record)
+    self._db.insert_into(_LABELS, [record])
 
   def get_unlabeled_sample(self, n):
     label_ids = '(SELECT {record_id} FROM {labels})'.format(
-        record_id=Project._RECORD_ID, labels=Project._LABELS)
+        record_id=_RECORD_ID, labels=_LABELS)
 
     query = 'SELECT {record_id},{txt_record}'.format(
-        record_id=Project._RECORD_ID,
-        txt_record=Project._TXT_RECORD)
+        record_id=_RECORD_ID,
+        txt_record=_TXT_RECORD)
     query += ' FROM {txt}'.format(
-        txt=Project._TXT)
+        txt=_TXT)
     query += ' WHERE {record_id} NOT IN {label_ids}'.format(
-        record_id=Project._RECORD_ID,
+        record_id=_RECORD_ID,
         label_ids=label_ids)
     query += ' LIMIT {limit}'.format(
         limit=n)
 
-    result = None
-    conn = lite.connect(self._db._path)
-    with conn:
-      cur = conn.cursor()
-      cur.execute(query)
-      result = cur.fetchall()
-    conn.close()
-    return result
+    return self._db.sql([(query, ())])
 
   def extract(self):
     fe = FieldExtractor(
@@ -179,14 +178,18 @@ class Project:
         connections=self.info.connections,
         custom_tokens=self.info.custom_tokens)
 
-    for txt_record, extraction_example in self._training_pairs():
+    for training_pair in self._training_pairs():
+      txt_record, extraction_example = training_pair
       fe.train(txt_record, extraction_example)
 
+    # TODO streamify
     for record_id, txt_record in self._txt():
-      extraction = fe.extract(txt_record)
-      record = {Project._RECORD_ID: record_id}
-      record.update(extraction)
-      self.insert_into(Project._EXTRACTIONS, record)
+      extraction, confidence = fe.extract(txt_record)
+      extraction = {field_name: extracted[0] for field_name, extracted in extraction.iteritems()}
+      record = {_RECORD_ID: record_id, _CONFIDENCE: confidence}
+      record.update(fe._all_field_filter(extraction))
+      # TODO check for multiple matches
+      self._db.insert_into(_EXTRACTIONS, [record])
 
   # convenience
   #############
@@ -195,43 +198,43 @@ class Project:
     return path.join(Project.PROJECTS, self.name)
 
   def _save_info(self):
-    with open(path.join(self._path(), Project._INFO_PKL), 'wb') as f:
+    with open(path.join(self._path(), _INFO_PKL), 'wb') as f:
       pickle.dump(self.info, f)
 
   def _load_info(self):
-    with open(path.join(self._path(), Project._INFO_PKL), 'rb') as f:
+    with open(path.join(self._path(), _INFO_PKL), 'rb') as f:
       return pickle.load(f)
 
   def _create_tables(self):
-    self._db.create_table(Project._TXT, [
-        (Project._RECORD_ID, Project._RECORD_ID_TYPE),
-        (Project._TXT_RECORD, Project._TXT_RECORD_TYPE)
+    self._db.create_table(_TXT, [
+        (_RECORD_ID, _RECORD_ID_TYPE),
+        (_TXT_RECORD, _TXT_RECORD_TYPE)
     ])
-    self._db.create_table(Project._LABELS, [
-        (Project._RECORD_ID, Project._RECORD_ID_TYPE)
+    self._db.create_table(_LABELS, [
+        (_RECORD_ID, _RECORD_ID_TYPE)
     ])
-    self._db.create_table(Project._EXTRACTIONS, [
-        (Project._RECORD_ID, Project._RECORD_ID_TYPE),
-        (Project._CONFIDENCE, Project._CONFIDENCE_TYPE)
+    self._db.create_table(_EXTRACTIONS, [
+        (_RECORD_ID, _RECORD_ID_TYPE),
+        (_CONFIDENCE, _CONFIDENCE_TYPE)
     ])
 
   def _training_pairs(self):
-    # TODO return iterable of (txt_record, extraction_example)
-    pass
+    all_fields = self.info.fields | self.info.aux_fields
+    query = 'SELECT {txt_record},{all_fields}'.format(
+        txt_record=_TXT_RECORD,
+        all_fields=','.join(all_fields))
+    query += ' FROM {txt},{labels}'.format(
+        txt=_TXT, labels=_LABELS)
+    query += ' WHERE {txt}.{record_id}={labels}.{record_id}'.format(
+        txt=_TXT, record_id=_RECORD_ID, labels=_LABELS)
+    training_records = self._db.sql([(query, ())])
+    split_records = ((tr[0], tr[1:]) for tr in training_records)
+    return ((rid, dict(zip(all_fields, ee))) for rid, ee in split_records)
 
   def _txt(self):
-    # TODO return an iterable of (record_id, txt_record)
-    pass
-
-  def _learn(self, field_extractor):
-    batch_size = 1e3 # tunable
-    batch = cur.fetchmany(batch_size)
-    while batch:
-      for row in batch:
-        # TODO convert row into training pair
-        field_extractor.train(x,e)
-      batch = cur.fetchmany(batch_size)
-    return sum
+    all_txt = 'SELECT {record_id},{txt_record} FROM {txt}'.format(
+        record_id=_RECORD_ID, txt_record=_TXT_RECORD, txt=_TXT)
+    return self._db.sql([(all_txt, ())])
 
 # Database operations
 #####################
@@ -246,55 +249,58 @@ class SqlDatabase:
 
   def create_table(self, tablename, columns):
     column_defs = ['{} {}'.format(col_name, col_type) for col_name, col_type in columns]
-    conn = lite.connect(self._path)
-    with conn:
-      cur = conn.cursor()
-      cur.execute('CREATE TABLE {tablename} ({columns})'.format(tablename=tablename,
-          columns=','.join(column_defs)))
-    conn.close()
+    create_table = 'CREATE TABLE {tablename} ({columns})'.format(tablename=tablename,
+        columns=','.join(column_defs))
+    self.sql([(create_table, ())])
 
   def drop_table(self, tablename):
-    conn = lite.connect(self._path)
-    with con:
-      cur = conn.cursor()
-      cur.execute('DROP TABLE IF EXISTS {tablename}'.format(tablename=tablename))
-    conn.close()
+    drop_table = 'DROP TABLE IF EXISTS {tablename}'.format(tablename=tablename)
+    self.sql([(drop_table, ())])
 
   def add_column(self, tablename, column_name, column_type):
-    conn = lite.connect(self._path)
-    with conn:
-      cur = conn.cursor()
-      cur.execute('ALTER TABLE {tablename} ADD {column_name} {column_type}'.format(
-          tablename=tablename, column_name=column_name, column_type=column_type))
-    conn.close()
+    add_column = 'ALTER TABLE {tablename} ADD {column_name} {column_type}'.format(
+        tablename=tablename, column_name=column_name, column_type=column_type)
+    self.sql([(add_column, ())])
 
   def drop_column(self, tablename, column_name):
+    drop_column = 'ALTER TABLE {tablename} DROP COLUMN {column_name}'.format(
+        tablename=tablename, column_name=column_name)
+    self.sql([(drop_column, ())])
+
+  # Streaming API
+  ###############
+
+  def sql(self, queries):
     conn = lite.connect(self._path)
     with conn:
       cur = conn.cursor()
-      cur.execute('ALTER TABLE {tablename} DROP COLUMN {column_name}'.format(
-          tablename=tablename, column_name=column_name))
+      for query, params in queries:
+        print 'query:', query
+        print 'params:', params
+        cur.execute(query, params)
+      return SqlDatabase.fetch(cur)
     conn.close()
 
-  # TODO more efficient insert? batch insert?
-  def insert_into(self, tablename, record):
-    conn = lite.connect(self._path)
-    with conn:
-      cur = conn.cursor()
-      value_placeholders = ['?'] * len(record)
-      insert = "INSERT INTO {tablename} ({column_names}) VALUES ({values})".format(
-          tablename=tablename,
-          column_names=','.join(record.keys()),
-          values=','.join(value_placeholders))
-      cur.execute(insert, record.values())
-    conn.close()
+  def insert_into(self, tablename, records):
+    self.sql(self._insert(tablename, record) for record in records)
 
   # convenience
   #############
 
-  def _do(self, func):
-    conn = lite.connect(self._path)
-    with conn:
-      cur = conn.cursor()
-      func(cur)
-    conn.close()
+  def _insert(self, tablename, record):
+    value_placeholders = ['?'] * len(record)
+    insert = "INSERT INTO {tablename} ({column_names}) VALUES ({values})".format(
+        tablename=tablename,
+        column_names=','.join(record.keys()),
+        values=','.join(value_placeholders))
+    return insert, record.values()
+
+  @staticmethod
+  def fetch(cursor, batch_size=1e3):
+    '''An iterator that uses fetchmany to keep memory usage down'''
+    while True:
+      records = cursor.fetchmany(int(batch_size))
+      if not records:
+        break
+      for record in records:
+        yield record

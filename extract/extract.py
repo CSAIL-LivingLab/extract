@@ -64,7 +64,8 @@ class FieldExtractor:
     v = len(self._outputs())
     hmm = HMM(k,v)
     #self._hmm.set_params(*self._hmm_stats.normalize())
-    hmm.set_params(*self._hmm_stats.smoothed_normalize(self.alpha))
+    S,T,E = self._hmm_stats.smoothed_normalize(self.alpha)
+    hmm.set_params(S, T, E)
     #print hmm._start_p
     #print hmm._trans_p
     #print hmm._emit_p
@@ -96,10 +97,10 @@ class FieldExtractor:
   # subroutines
   #############
 
-  def _field_filter(self, raw_extraction):
+  def _all_field_filter(self, raw_extraction):
     filtered_extraction = {}
     for field_name,field_extraction in raw_extraction.items():
-      if field_name in self._fields:
+      if field_name in self._fields | self._aux_fields:
         filtered_extraction[field_name] = field_extraction
     return filtered_extraction
 
