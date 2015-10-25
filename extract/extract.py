@@ -33,7 +33,7 @@ class FieldExtractor:
 
   def learn(self, training_examples, smoothing=0):
     '''Trains the underlying HMM via machine learning techniques.
-    training_examples -- sequence of (txt,extraction) examples
+    training_examples -- sequence of (txt, extraction) examples
     '''
     training_pairs = (self._training_pair(example) for example in training_examples)
     self._hmm.supervised_learn(training_pairs, smoothing=smoothing)

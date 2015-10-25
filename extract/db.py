@@ -1,9 +1,20 @@
 import sqlite3 as lite
+from contextlib import contextmanager
 
 # Database operations
 #####################
 
-class SqlDatabase:
+# TODO use this to implement a streaming API to handle BIG data
+def fetch(cursor, batch_size=1e3):
+  '''An iterator that uses fetchmany to keep memory usage down'''
+  while True:
+    records = cursor.fetchmany(int(batch_size))
+    if not records:
+      break
+    for record in records:
+      yield record
+
+class MapDB:
 
   def __init__(self, path):
     self._path = path
@@ -11,58 +22,42 @@ class SqlDatabase:
   # API
   #####
 
+  @contextmanager
+  def cursor(self):
+    conn = lite.connect(self._path)
+    with conn: # TODO with statement in contextmanager?
+      cur = conn.cursor()
+      yield cur
+    conn.close()
+
+  # SQL synthesis
+
   def create_table(self, tablename, columns):
     column_defs = ['{} {}'.format(col_name, col_type) for col_name, col_type in columns]
     create_table = 'CREATE TABLE {tablename} ({columns})'.format(tablename=tablename,
         columns=','.join(column_defs))
-    self.sql([(create_table, ())])
+    return create_table, ()
 
   def drop_table(self, tablename):
     drop_table = 'DROP TABLE IF EXISTS {tablename}'.format(tablename=tablename)
-    self.sql([(drop_table, ())])
+    return drop_table, ()
 
   def add_column(self, tablename, column_name, column_type):
     add_column = 'ALTER TABLE {tablename} ADD {column_name} {column_type}'.format(
         tablename=tablename, column_name=column_name, column_type=column_type)
-    self.sql([(add_column, ())])
+    return add_column, ()
 
   def drop_column(self, tablename, column_name):
     drop_column = 'ALTER TABLE {tablename} DROP COLUMN {column_name}'.format(
         tablename=tablename, column_name=column_name)
-    self.sql([(drop_column, ())])
+    return drop_column, ()
 
-  # Streaming API
-  ###############
-
-  def sql(self, queries):
-    conn = lite.connect(self._path)
-    with conn:
-      cur = conn.cursor()
-      for query, params in queries:
-        cur.execute(query, params)
-      return SqlDatabase.fetch(cur)
-    conn.close()
-
-  def insert_into(self, tablename, records):
-    self.sql(self._insert(tablename, record) for record in records)
-
-  # convenience
-  #############
-
-  def _insert(self, tablename, record):
-    value_placeholders = ['?'] * len(record)
-    insert = "INSERT INTO {tablename} ({column_names}) VALUES ({values})".format(
+  def insert(self, tablename, record_map):
+    attrs, record = record_map.keys(), record_map.values()
+    value_placeholders = ['?'] * len(attrs)
+    insert = "INSERT INTO {tablename} ({columns}) VALUES ({values})".format(
         tablename=tablename,
-        column_names=','.join(record.keys()),
+        columns=','.join(attrs),
         values=','.join(value_placeholders))
-    return insert, record.values()
+    return insert, record
 
-  @staticmethod
-  def fetch(cursor, batch_size=1e3):
-    '''An iterator that uses fetchmany to keep memory usage down'''
-    while True:
-      records = cursor.fetchmany(int(batch_size))
-      if not records:
-        break
-      for record in records:
-        yield record

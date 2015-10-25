@@ -139,7 +139,7 @@ class HiddenMarkovModel:
       path = newpath
 
     prob, state = max((V[-1][z], z) for z in range(self.k))
-    return self._hidden_state_names(*path[state]), prob
+    return self._hidden_state_names(*path[state]), prob[0]
 
   # parameter estimation
   ######################
