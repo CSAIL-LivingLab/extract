@@ -1,15 +1,28 @@
 import re
 
+DEFAULT_TOKEN_DEFS = {
+  'num': '\d+',
+  'abc': '[a-zA-Z]+',
+  #'sym': '[-`=[\]\\\\;\',./~!@#$%^&*()_+{}|:"<>?\s]'
+  'spc': '\s+',
+  #'pnc': '[-`=[\]\\\\;\',./~!@#$%^&*()_+{}|:"<>?]'
+  'hyp': '[-]{1}',
+  'cln': '[:]{1}',
+  'prd': '[.]{1}',
+  'pnc': '[`=[\]\\\\;\',/~!@#$%^&*()_+{}|"<>?]',
+}
+
 class Lexer:
 
   @staticmethod
   def detokenize(tokens):
-    return ''.join([token.string for token in tokens])
+    return u''.join([token.string for token in tokens])
 
-  def __init__(self, types, unk=True):
+  def __init__(self, types, custom_types={}, unk=True):
     self.types = types
-    if unk:
-      self.unk = 'unk'
+    self.types.update(custom_types)
+    #self.custom_types={}
+    self.unk = unk
 
   # TODO match against custom tokens first?
   def tokenize(self, text, stop=True):
@@ -39,6 +52,9 @@ class Lexer:
 
 class Token:
 
+  STOP = u'STOP'
+  UNK = u'unk'
+
   def __init__(self, typ, string):
     self.typ = typ
     self.string = string
@@ -47,13 +63,13 @@ class Token:
 
   @staticmethod
   def stop():
-    stop_token = Token('STOP', None)
+    stop_token = Token(Token.STOP, u'')
     stop_token.stop = True
     return stop_token
 
   @staticmethod
   def unknown():
-    unk_token = Token('unk', None)
+    unk_token = Token(Token.UNK, None)
     unk_token.unk = True
     return unk_token
 
@@ -65,6 +81,14 @@ class Token:
       display_string = repr(self.string)[1:-1]
       if type(self.string) == unicode:
         display_string = repr(self.string)[2:-1]
-      return "<{} {}>".format(display_string, self.typ)
+      return '<{} {}>'.format(display_string, self.typ)
     else:
-      return "<{}>".format(self.typ)
+      return '<{}>'.format(self.typ)
+
+def find(tokens, pattern):
+  i = 0
+  while i <= len(tokens) - len(pattern):
+    if tokens[i:i + len(pattern)] == pattern:
+      return i
+    i += 1
+  return -1

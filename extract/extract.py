@@ -1,190 +1,171 @@
+# -*- coding: utf-8 -*-
+from collections import namedtuple, defaultdict
 from .hmm import HiddenMarkovModel as HMM
-from .learn import featurize, NumericalTranslator, HiddenMarkovModelStatistics as HMM_Statistics
-from .lex import Lexer
+from .learn import featurize
+from .lex import Lexer, find, DEFAULT_TOKEN_DEFS, Token
 
-# TODO set lexer with hierarchy
-default_types = {
-  'num': '\d+',
-  'abc': '[a-zA-Z]+',
-  #'sym': '[-`=[\]\\\\;\',./~!@#$%^&*()_+{}|:"<>?\s]'
-  'spc': '\s+',
-  #'pnc': '[-`=[\]\\\\;\',./~!@#$%^&*()_+{}|:"<>?]'
-  'hyp': '[-]{1}',
-  'cln': '[:]{1}',
-  'prd': '[.]{1}',
-  'pnc': '[`=[\]\\\\;\',/~!@#$%^&*()_+{}|"<>?]',
-}
+# TODO field namespace? other namespaces? uniqueness
 
 # Use-case: 1 FE / extraction
 class FieldExtractor:
+  '''Extracts fields from text via the Viterbi algorithm.
+  Learns a model via the HMM supervised learning algorithm.
+  '''
 
-  _GARBAGE_FIELD = None
-  _DEFAULT_ALPHA = 1e-3
+  _GARBAGE_STATE = None
+  # TODO different smoothing parameters for differents states/observations
 
-  # TODO aggressive smoothing for garbage state, differentiate smoothing between HMM matrices
   def __init__(self, fields, aux_fields=[], connections={}, custom_tokens={}):
+    '''Initializes a FieldExtractor with a Lexer and an HMM.
+    fields -- sequence with the names of the target fields for extraction
+    aux_fields -- sequence of auxiliary fields that may help to model the target fields
+    connections -- describes important state transitions (ignoring garbage sequences)
+    custom_tokens -- a mapping between names and regex's to help model the language
+    '''
     self._fields = set(fields)
     self._aux_fields = set(aux_fields)
     self._connections = connections
     self._custom_tokens = custom_tokens
 
-    types = default_types.copy()
-    types.update(self._custom_tokens)
-    self._lexer = Lexer(types)
+    self._lexer = Lexer(DEFAULT_TOKEN_DEFS, custom_types=custom_tokens)
 
-    k = len(self._states())
-    v = len(self._outputs())
-    self._hmm_stats = HMM_Statistics(k,v)
-    self._x_translator = NumericalTranslator(self._outputs())
-    self._y_translator = NumericalTranslator(self._states())
+    self._hmm = HMM(self._states(), self._outputs())
 
-    # Tunable parameters
-    self.alpha = FieldExtractor._DEFAULT_ALPHA
+  def learn(self, training_examples, smoothing=0):
+    '''Trains the underlying HMM via machine learning techniques.
+    training_examples -- sequence of (txt,extraction) examples
+    '''
+    training_pairs = (self._training_pair(example) for example in training_examples)
+    self._hmm.supervised_learn(training_pairs, smoothing=smoothing)
+    #print self._hmm.start_p
+    #print self._hmm.trans_p
+    #print self._hmm.emit_p
 
-  def train(self, txt_record_example, extraction_example):
+  def _training_pair(self, training_example):
+
+    txt_example, extraction_example = training_example
 
     # txt_record -> x
-    x_tokens = self._lexer.tokenize(txt_record_example)
-    x_obj = featurize(x_tokens)
-    x = self._x_translator.numerical(x_obj)
+    x_tokens = self._lexer.tokenize(txt_example)
+    x = featurize(x_tokens)
 
     # extraction_example -> y
-    y_tokens = {}
-    for field_name, extracted_field in extraction_example.iteritems():
-      y_tokens[field_name] = self._lexer.tokenize(extracted_field, stop=False)
-    y_obj = extraction2label(x_tokens, y_tokens, self._connections)
-    y = self._y_translator.numerical(y_obj)
+    y_tokens = {
+        field: self._lexer.tokenize(extract, stop=False)
+        for field, extract in extraction_example.iteritems()
+    }
+    y = _label(x_tokens, y_tokens, connections=self._connections)
 
-    # include x,y in statistics
-    self._hmm_stats.include(x, y)
-
-  def _hmm(self):
-    # HMM
-    k = len(self._states())
-    v = len(self._outputs())
-    hmm = HMM(k,v)
-    #self._hmm.set_params(*self._hmm_stats.normalize())
-    S,T,E = self._hmm_stats.smoothed_normalize(self.alpha)
-    hmm.set_params(S, T, E)
-    #print hmm._start_p
-    #print hmm._trans_p
-    #print hmm._emit_p
-    return hmm
+    return x, y
 
   def extract(self, txt_record):
     '''Extracts pieces of text corresponding to fields.
-    Returns a tuple with a dictionary mapping field names to a list of matching extraction and a confidence in the extraction as a probability.
+    Returns an extraction map {field: extract} and the probability of the extraction
     '''
     # digest input
     t_test = self._lexer.tokenize(txt_record)
-    x_obj_test = featurize(t_test)
-    x_test = self._x_translator.numerical(x_obj_test)
+    x_test = featurize(t_test)
 
     # ML guess
-    z, confidence = self._hmm().viterbi(x_test)
+    z, probability = self._hmm.viterbi(x_test)
 
-    # group by internal field number
-    fields = group_fields(z, t_test)
+    # group by field
+    raw_extraction = _group_fields(z, t_test)
 
-    # translate field numbers to field names
-    raw_extraction = {}
-    for field_num, field in fields.iteritems():
-      raw_extraction[self._y_translator.word(field_num)] = field
+    # TODO normalize probabilities to come up with confidences
+    return raw_extraction, probability
 
-    # TODO normalize confidences
-    return raw_extraction, confidence
+  def all_field_filter(self, raw_extraction):
+    '''Filters out any mappings whose state is not a field or auxiliary field.
+    Eg. Filters out the garbage state and states derived from connections
+    raw_extraction -- a mapping from state names to extracts
+    '''
+    filtered = {
+        field: extract
+        for field,extract in raw_extraction.iteritems()
+        if field in self._fields | self._aux_fields
+    }
+    return filtered
 
   # subroutines
   #############
 
-  def _all_field_filter(self, raw_extraction):
-    filtered_extraction = {}
-    for field_name,field_extraction in raw_extraction.items():
-      if field_name in self._fields | self._aux_fields:
-        filtered_extraction[field_name] = field_extraction
-    return filtered_extraction
-
   def _states(self):
-    states = [FieldExtractor._GARBAGE_FIELD]
+    states = [FieldExtractor._GARBAGE_STATE]
     states.extend(self._fields)
     states.extend(self._aux_fields)
     for from_state, to_states in self._connections.iteritems():
-      states.extend(['{}2{}'.format(from_state, to_state) for to_state in to_states])
+      states.extend([_connection(from_state, to_state) for to_state in to_states])
     return states
 
   def _outputs(self):
-    outputs = ['STOP'] # stop tokens
+    outputs = [Token.STOP]
     outputs.extend(self._lexer.types.keys())
     return outputs
 
-# TODO move utils into their own file?
 # utils
 #######
 
-def find(x, pattern):
-  i = 0
-  while i <= len(x) - len(pattern):
-    if x[i:i + len(pattern)] == pattern:
-      return i
-    i += 1
-  return -1
+def _connection(from_state, to_state):
+  return u'{} ➞ {}'.format(from_state, to_state)
 
-def extraction2label(x_tokens, y_tokens, connections):
+def _label(x_tokens, y_tokens, connections={}):
+  '''Produces a sequence of field names acting as a label for the observation sequence.
+  x_tokens -- the tokenized observation sequence
+  y_tokens -- a mapping from field names to individually-tokenized extracts
+  connections -- state transitions that ignore garbage gaps between the states
+  '''
+
   labels = [None] * len(x_tokens)
 
   # label fields and aux fields
-  for state,extraction in y_tokens.iteritems():
-    i = find(x_tokens, extraction)
-    labels[i : i + len(extraction)] = [state] * len(extraction)
+  for state, extract in y_tokens.iteritems():
+    i = find(x_tokens, extract)
+    labels[i : i + len(extract)] = [state] * len(extract)
 
-  # compute start,stop indices for all potential connections
-  links = _links(labels)
-
-  # fill in links with corresponding connections
-  for (from_state,to_state), (i,j) in links.iteritems():
+  # fill in gaps with corresponding connections
+  for gap in _gaps(labels):
+    start, stop = gap.start, gap.end
+    from_state = labels[start - 1]
+    to_state = labels[stop]
     if to_state in connections.get(from_state, set()):
-      labels[i:j] = ['{}2{}'.format(from_state, to_state)] * (j - i)
+      labels[start:stop] = [_connection(from_state, to_state)] * (stop - start)
   return labels
 
-# helper function for extraction2label
-def _links(labels):
-  '''Finds all sequences of None within @param labels that are wrapped by non-None values
-    @param labels is a list of field names as strings
-    @returns a dictionary mapping the 2 states surrounding a None-sequence to the indices for that None-sequence
+def _gaps(labels):
+  '''Find start/stop indices for all unbroken sequences of None.
+  labels -- a sequence of field names
   '''
-  links = {}
-  index = 0
-  while index < len(labels):
-    label = labels[index]
-    if label is None and index != 0:
-      none_index = index
-      while none_index < len(labels):
-        if labels[none_index] is not None:
-          break
-        none_index += 1
-      if none_index >= len(labels):
-        break
-      from_state = labels[index - 1]
-      to_state = labels[none_index]
-      links[(from_state, to_state)] = (index, none_index)
-      index = none_index
-    else:
-      index += 1
-  return links
+  Gap = namedtuple('Gap', ['start', 'end'])
+  gaps = []
 
-# chunk
-#######
+  field_indices = []
+  for index, label in enumerate(labels):
+    if label is not None:
+      field_indices.append(index)
 
-def group_fields(z, x):
-  fields = {}
-  field = [x[0]]
-  for t in range(1,len(x)):
-    field_id = z[t - 1]
-    if z[t] == field_id:
-      field.append(x[t])
+  for i in range(0, len(field_indices) - 1):
+    field_index = field_indices[i]
+    next_field_index = field_indices[i + 1]
+    if field_index + 1 != next_field_index:
+      # gap detected
+      start = field_index + 1
+      end = next_field_index
+      gaps.append(Gap(start=start, end=end))
+
+  return gaps
+
+def _group_fields(z, x_tokens):
+  '''Maps field names to their extracts'''
+  fields = defaultdict(list)
+  extract = [x_tokens[0]]
+  for t in range(1,len(x_tokens)):
+    field = z[t - 1]
+    if z[t] == field:
+      extract.append(x_tokens[t])
     else:
-      fields.setdefault(field_id, []).append(Lexer.detokenize(field))
-      field = [x[t]]
-  # ignore dangling field as it always corresponds to STOP
-  #fields.setdefault(z[-1], []).append(Lexer.detokenize(field))
+      fields[field].append(Lexer.detokenize(extract))
+      extract = [x_tokens[t]]
+  # handle dangling extract
+  fields[z[-1]].append(Lexer.detokenize(extract))
   return fields
