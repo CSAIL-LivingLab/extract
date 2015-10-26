@@ -50,12 +50,15 @@ class ProjectInfo:
     self.custom_tokens = {}
 
 class Project:
-  '''''' # TODO
+  '''Persistenly encapsulates a field extraction project'''
 
   PROJECTS = 'projects' # projects directory
 
   def __init__(self, name, info=None):
-    '''''' # TODO
+    '''Initializes a project
+    name -- The name of the project
+    info -- Empty ProjectInfo should be passed in when creating a new project
+    '''
     self.name = name
 
     if info:
@@ -68,7 +71,10 @@ class Project:
 
   @staticmethod
   def new_project(name, f):
-    '''''' # TODO
+    '''Creates a new project.
+    name -- The name of the project
+    f -- File descriptor for the text file that should be extracted
+    '''
     project_path = path.join(Project.PROJECTS, name)
     if path.exists(project_path): # check for name collisions
       raise ValueError("Project with name '{}' already exists".format(name))
@@ -83,7 +89,9 @@ class Project:
 
   @staticmethod
   def load_projects(projects_dir=None):
-    '''''' # TODO
+    '''Loads all projects from the project directory
+    Returns a list of projects
+    '''
     if not projects_dir:
       projects_dir = Project.PROJECTS
     projects = []
@@ -93,7 +101,7 @@ class Project:
 
   @staticmethod
   def load_project(name, projects_dir=None):
-    '''''' # TODO
+    '''Load a specific project by name'''
     if not projects_dir:
       projects_dir = Project.PROJECTS
     for project_name in next(walk(projects_dir))[1]:
@@ -103,7 +111,7 @@ class Project:
 
   @staticmethod
   def delete_project(name, projects_dir=None):
-    '''''' # TODO
+    '''Irreversibly deletes a project by name'''
     if not projects_dir:
       projects_dir = Project.PROJECTS
     project_path = path.join(projects_dir, name)
@@ -116,7 +124,6 @@ class Project:
   # TODO refactor DRY
 
   def add_fields(self, fields):
-    '''''' # TODO
     with self._db.cursor() as cur:
       for field in set(fields):
         self.info.fields.add(field)
@@ -177,6 +184,7 @@ class Project:
 
   # @output := {record_id: rid, txt_record: txt_r}
   def txt(self):
+    '''''' # TODO
     query = ('SELECT {record_id},{txt_record}'
             ' FROM {txt}')
 
@@ -187,6 +195,7 @@ class Project:
 
   # @output := {record_id: rid, txt_record: txt_r}
   def unlabeled_sample(self, n):
+    '''''' # TODO
     query = ('SELECT {record_id},{txt_record}'
             ' FROM {txt}'
             ' WHERE {record_id} NOT IN (SELECT {record_id} FROM {labels})'
@@ -199,6 +208,7 @@ class Project:
 
   # @output := {record_id: rid, txt_record: txt_r, *fields: *artificial_extract}
   def training_examples(self):
+    '''''' # TODO
     query = ('SELECT {txt}.{record_id},{txt_record},{all_fields}'
             ' FROM {txt},{labels}'
             ' WHERE {txt}.{record_id}={labels}.{record_id}')
@@ -211,6 +221,7 @@ class Project:
 
   # @output := {record_id: rid, txt_record: txt_r, confidence: c, *fields: *impure_extract}
   def raw_extractions(self):
+    '''''' # TODO
     query = ('SELECT {txt}.{record_id} AS {record_id},{txt_record},{confidence},{all_fields}'
             ' FROM {txt},{raw_extractions}'
             ' WHERE {txt}.{record_id}={raw_extractions}.{record_id}')
@@ -219,11 +230,14 @@ class Project:
     query = query.format(all_fields=','.join(all_fields), **_DB_NAMESPACE)
 
     attrs = [_RECORD_ID, _TXT_RECORD, _CONFIDENCE] + all_fields
-    pkld_maps = (dict(zip(attrs, record)) for record in self._sql(query))
-    return (_unpkl(record_map, all_fields) for record_map in pkld_maps)
+    pkl_maps = (dict(zip(attrs, pkl_record)) for pkl_record in self._sql(query))
+
+    record_maps = (self._unpkl(pkl_map) for pkl_map in pkl_maps)
+    return record_maps
 
   # @output := {record_id: rid, txt_record: txt_r, confidence: c, *fields: *pure_extract}
   def refined_extractions(self, sql):
+    '''''' # TODO
     query = ('SELECT {txt}.{record_id} AS {record_id},{txt_record},{confidence},{all_fields}'
             ' FROM {txt},{refined_extractions}'
             ' WHERE {txt}.{record_id}={refined_extractions}.{record_id}')
@@ -239,6 +253,7 @@ class Project:
 
   # @input training_examples := {record_id: rid, *fields: *artificial_extract}
   def add_training_examples(self, training_examples):
+    '''''' # TODO
     with self._db.cursor() as cur:
       for training_example in training_examples:
         cur.execute(*self._db.insert(_LABELS, training_example))
@@ -247,6 +262,7 @@ class Project:
 #####################
 
   def extract(self, smoothing=0):
+    '''''' # TODO
     # initialize field extractor
     fe = FieldExtractor(
         fields=self.info.fields,
@@ -267,13 +283,11 @@ class Project:
     # store extractions
     with self._db.cursor() as cur:
       for extraction_map in extraction_maps:
-        pkl_extraction_map = {
-            field: (pickle.dumps(extract) if field in self._all_fields() else extract)
-            for field, extract in extraction_map.iteritems()
-        }
-        cur.execute(*self._db.insert(_RAW_EXTRACTIONS, pkl_extraction_map))
+        # pickle all fields (may contain multiple matches in a list)
+        cur.execute(*self._db.insert(_RAW_EXTRACTIONS, self._pkl(extraction_map)))
 
   def refine(self):
+    '''''' # TODO
     # TODO
     for extraction_map in self.raw_extractions():
       self._sql(*self._db.insert(_REFINED_EXTRACTIONS, _refine(extraction_map)))
@@ -325,6 +339,26 @@ class Project:
       for txt_record_map in txt_record_maps:
         cur.execute(*self._db.insert(_TXT, txt_record_map))
 
+  def _pkl(self, record_map):
+    pkl_record_map = record_map.copy()
+    pkl_fields = {
+        field: pickle.dumps(extract)
+        for field, extract in record_map.iteritems()
+        if field in self._all_fields() and extract is not None
+    }
+    pkl_record_map.update(pkl_fields)
+    return pkl_record_map
+
+  def _unpkl(self, pkl_record_map):
+    record_map = pkl_record_map.copy()
+    unpkl_fields = {
+        field: pickle.loads(extract)
+        for field, extract in pkl_record_map.iteritems()
+        if field in self._all_fields() and extract is not None
+    }
+    record_map.update(unpkl_fields)
+    return record_map
+
   # TODO warn if we see any records that have more than 1 match
   def _multiple_match(self, extract_map):
     all_fields = self.info.fields | self.info.aux_fields
@@ -342,9 +376,3 @@ def _extraction_map(fe, record):
   extraction_map.update(fe.all_field_filter(extraction))
   return extraction_map
 
-def _unpkl(record_map, all_fields):
-  d = {k: pickle.loads(v)
-      for k,v in record_map.iteritems()
-      if v and k in all_fields
-  }
-  return d

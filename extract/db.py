@@ -25,7 +25,7 @@ class MapDB:
   @contextmanager
   def cursor(self):
     conn = lite.connect(self._path)
-    with conn: # TODO with statement in contextmanager?
+    with conn:
       cur = conn.cursor()
       yield cur
     conn.close()
