@@ -264,6 +264,19 @@ class Project:
   def extract(self, smoothing=0):
     '''''' # TODO
     # initialize field extractor
+    fe = self._trained_field_extractor(smoothing)
+
+    # extract
+    extraction_maps = (_extraction_map(fe, record) for record in self.txt())
+
+    # store extractions
+    with self._db.cursor() as cur:
+      for extraction_map in extraction_maps:
+        # pickle all fields (may contain multiple matches in a list)
+        cur.execute(*self._db.insert(_RAW_EXTRACTIONS, self._pkl(extraction_map)))
+
+  def _trained_field_extractor(self, smoothing=0):
+    # initialize field extractor
     fe = FieldExtractor(
         fields=self.info.fields,
         aux_fields=self.info.aux_fields,
@@ -276,21 +289,34 @@ class Project:
         for training_example in self.training_examples()
     )
     fe.learn(split_training_examples, smoothing=smoothing)
-
-    # extract
-    extraction_maps = (_extraction_map(fe, record) for record in self.txt())
-
-    # store extractions
-    with self._db.cursor() as cur:
-      for extraction_map in extraction_maps:
-        # pickle all fields (may contain multiple matches in a list)
-        cur.execute(*self._db.insert(_RAW_EXTRACTIONS, self._pkl(extraction_map)))
+    return fe
 
   def refine(self):
     '''''' # TODO
     # TODO
     for extraction_map in self.raw_extractions():
       self._sql(*self._db.insert(_REFINED_EXTRACTIONS, _refine(extraction_map)))
+
+  def structure_ambiguity(self, threshold):
+    fe = self._trained_field_extractor()
+    for ambiguous_field_pairs in fe.ambiguity(threshold):
+      yield ambiguous_field_pairs
+
+  def match_ambiguity(self):
+    for extract_map in self.raw_extractions():
+      multiple_matches = self._multiple_match(extract_map)
+      if len(multiple_matches) > 0:
+        yield extract_map, multiple_matches
+
+  # TODO warn if we see any records that have more than 1 match
+  def _multiple_match(self, extract_map):
+    all_fields = self.info.fields | self.info.aux_fields
+    mm = {}
+    for attr, extract in extract_map.iteritems():
+      if attr in all_fields and extract is not None and len(extract) > 1:
+        mm[attr] = extract
+    return mm
+
 
   # convenience
   #############
@@ -358,15 +384,6 @@ class Project:
     }
     record_map.update(unpkl_fields)
     return record_map
-
-  # TODO warn if we see any records that have more than 1 match
-  def _multiple_match(self, extract_map):
-    all_fields = self.info.fields | self.info.aux_fields
-    mm = {}
-    for attr, extract in extract_map:
-      if attr in all_fields and len(extract) > 1:
-        mm[attr] = extract
-    return mm
 
 # utils
 

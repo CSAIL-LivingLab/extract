@@ -87,6 +87,9 @@ class FieldExtractor:
     }
     return filtered
 
+  # HCI
+  #####
+
   def ambiguity(self, threshold):
     ambiguous = set()
     emit_ambiguity = self._emission_ambiguity()
