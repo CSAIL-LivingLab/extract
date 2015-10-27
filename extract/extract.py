@@ -87,6 +87,60 @@ class FieldExtractor:
     }
     return filtered
 
+  def ambiguity(self, threshold):
+    ambiguous = set()
+    emit_ambiguity = self._emission_ambiguity()
+    trans_ambiguity = self._transition_ambiguity()
+    all_fields = self._fields | self._aux_fields
+    for states, emit_amb in emit_ambiguity.iteritems():
+      state_i, state_j = states
+      if state_i in all_fields and state_j in all_fields:
+        if emit_amb < threshold and trans_ambiguity[states] < threshold:
+          ambiguous.add(states)
+    return ambiguous
+
+  def _emission_ambiguity(self):
+    ambiguity_scores = {
+        tuple(self._hmm._hidden_state_names(i, j)): self._emission_score(i,j)
+        for i in range(self._hmm.k)
+        for j in range(self._hmm.k)
+        if i < j
+    }
+    return ambiguity_scores
+
+  def _emission_score(self, i, j):
+    return sum(abs(self._hmm.emit_p[i,:] - self._hmm.emit_p[j, :]))
+
+  def _transition_ambiguity(self):
+    # compare self transitions!
+    ambiguity_scores = {
+        tuple(self._hmm._hidden_state_names(i, j)): self._transition_score(i,j)
+        for i in range(self._hmm.k)
+        for j in range(self._hmm.k)
+        if i < j
+    }
+    return ambiguity_scores
+
+  def _transition_score(self, i, j):
+    prob_cycle_i = self._hmm.trans_p[i,i]
+    prob_cycle_j = self._hmm.trans_p[j,j]
+
+    trans_i_k = self._hmm.trans_p[i,:]
+    trans_i_k[i] = 0
+    trans_k_i = self._hmm.trans_p[:,i]
+    trans_k_i[i] = 0
+
+    trans_j_k = self._hmm.trans_p[j, :]
+    trans_j_k[j] = 0
+    trans_k_j = self._hmm.trans_p[:, j]
+    trans_k_j[j] = 0
+
+    score = max(
+        sum(abs(trans_i_k - trans_j_k)),
+        sum(abs(trans_k_i - trans_k_j))
+    )
+    return score
+
   # subroutines
   #############
 
