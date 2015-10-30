@@ -1,0 +1,47 @@
+{% from 'macros.html' import page_pill %}
+<!doctype html>
+<html>
+  <head>
+    <title>TXTract</title>
+    <link href="{{ url_for('static', filename='img/extract.png') }}" rel="shortcut icon">
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet" media="screen">
+    <link href="{{ url_for('static', filename='css/dataTables.bootstrap.min.css') }}" rel="stylesheet" media="screen">
+    <link href="{{ url_for('static', filename='css/app.css') }}" rel="stylesheet" media="screen">
+    <script src="{{ url_for('static', filename='js/jquery.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/bootstrap.min.js') }}"></script>
+
+    <script src="{{ url_for('static', filename='js/jquery.dataTables.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dataTables.bootstrap.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% block head %}{% endblock %}
+  </head>
+  <body>
+    <div class="container">
+      <div class="row">
+        <div class="col-md-1">
+          <div class="row">
+            {% if session.working_project %}
+              <div class="well well-sm">
+                <h4>{{ session.working_project }}</h4>
+              </div>
+            {% endif %}
+          </div>
+          <div class="row">
+            <ul class="nav nav-pills nav-stacked">
+              {{ page_pill('home', active_page) }}
+              {{ page_pill('projects', active_page) }}
+              {{ page_pill('fields', active_page) }}
+              {{ page_pill('label', active_page) }}
+              {{ page_pill('connect', active_page) }}
+              {{ page_pill('review', active_page) }}
+              {{ page_pill('query', active_page) }}
+            </ul>
+          </div>
+        </div>
+        <div class="col-md-11">
+          {% block body %}{% endblock %}
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,85 @@
+{% extends "layout.html" %}
+{% set active_page = 'connect' %}
+
+{% block body %}
+  <div class="panel panel-default">
+    <div class="panel-heading">
+      <h4>Auxiliary Fields</h3>
+    </div>
+    <div class="panel-body">
+      <div class="row">
+        <form class="form form-inline" action="/api/add_aux_fields" method="post" enctype="multipart/form-data">
+          <div class="col-md-8">
+            <input class="form-control" name="fields" type="text" placeholder="Field names (csv)">
+          </div>
+          <div class="col-md-4">
+            <label class="btn btn-primary">
+              Add Auxiliary Fields
+              <input type="submit">
+            </label>
+          </div>
+        </form>
+      </div>
+      <div class="row">
+        <ul class="list-inline">
+          {% for aux_field in info.aux_fields %}
+            <li><h3><span class="label label-default">{{ aux_field }}</span></h3></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="panel panel-default">
+    <div class="panel-heading">
+      <h4>Connections</h3>
+    </div>
+    <div class="panel-body">
+      <div class="row">
+        <form class="form form-inline" action="/api/add_connections" method="post" enctype="multipart/form-data">
+          <div class="col-md-2">
+            <select class="form-control" name="from_state">
+              {% for field in info.fields %}
+                <option value="{{ field }}">{{ field }}</option>
+              {% endfor %}
+              {% for aux_field in info.aux_fields %}
+                <option value="{{ aux_field }}">{{ aux_field }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-1">
+            <span class="glyphicon glyphicon-arrow-right"></span>
+          </div>
+          <div class="col-md-2">
+            <select class="form-control" name="to_state">
+              {% for field in info.fields %}
+                <option value="{{ field }}">{{ field }}</option>
+              {% endfor %}
+              {% for aux_field in info.aux_fields %}
+                <option value="{{ aux_field }}">{{ aux_field }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-offset-5 col-md-2">
+            <label class="btn btn-primary">
+              Add Connections
+              <input type="submit">
+            </label>
+          </div>
+        </form>
+      </div>
+      <div class="row">
+        <ul>
+        {% for from_state, to_states in info.connections.iteritems() %}
+          {% for to_state in to_states %}
+            <li>
+              {{ from_state }}
+              <span class="glyphicon glyphicon-arrow-right"></span>
+              {{ to_state }}
+            </li>
+          {% endfor %}
+        {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+{% endblock %}

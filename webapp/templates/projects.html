@@ -1,0 +1,36 @@
+{% from 'macros.html' import file_upload,project_description %}
+{% extends "layout.html" %}
+{% set active_page = 'projects' %}
+
+{% block head %}
+<link href="{{ url_for('static', filename='css/projects.css') }}" rel="stylesheet" media="screen">
+<script src="{{ url_for('static', filename='js/projects.js') }}"></script>
+{% endblock %}
+
+{% block body %}
+  <div class="jumbotron">
+    <h1>Projects</h1>
+  </div>
+  <div class="row">
+    <h2>Create new Project</h2>
+
+    <form class="form form-inline" action="/api/new_project" method="post" enctype="multipart/form-data">
+      <input type="text" class="form-control" name="project_name" placeholder="Project name">
+      {{ file_upload('txt', 'Select txt file') }}
+      <label class="btn btn-primary">
+        <input class="file-upload" type="submit" value="Submit">
+        Create Project
+      </label>
+    </form>
+
+  </div>
+
+  <div class="row">
+    <h2>Existing Projects</h2>
+    {% for project in projects %}
+      <div class="row">
+        {{ project_description(project) }}
+      </div>
+    {% endfor %}
+  </div>
+{% endblock %}

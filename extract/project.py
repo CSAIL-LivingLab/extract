@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 import csv
 import pickle
 import shutil
@@ -44,8 +44,8 @@ class ProjectInfo:
   Holds meta-data that needs to be persisted for each project
   '''
   def __init__(self):
-    self.fields = set([])
-    self.aux_fields = set([])
+    self.fields = []
+    self.aux_fields = []
     self.connections = defaultdict(set)
     self.custom_tokens = {}
 
@@ -126,7 +126,7 @@ class Project:
   def add_fields(self, fields):
     with self._db.cursor() as cur:
       for field in set(fields):
-        self.info.fields.add(field)
+        self.info.fields.append(field)
         cur.execute(*self._db.add_column(_LABELS, field, 'TEXT'))
         cur.execute(*self._db.add_column(_RAW_EXTRACTIONS, field, 'TEXT'))
         cur.execute(*self._db.add_column(_REFINED_EXTRACTIONS, field, 'TEXT'))
@@ -144,7 +144,7 @@ class Project:
   def add_aux_fields(self, aux_fields):
     with self._db.cursor() as cur:
       for aux_field in set(aux_fields):
-        self.info.aux_fields.add(aux_field)
+        self.info.aux_fields.append(aux_field)
         cur.execute(*self._db.add_column(_LABELS, aux_field, 'TEXT'))
         cur.execute(*self._db.add_column(_RAW_EXTRACTIONS, aux_field, 'TEXT'))
         cur.execute(*self._db.add_column(_REFINED_EXTRACTIONS, aux_field, 'TEXT'))
@@ -190,8 +190,10 @@ class Project:
 
     query = query.format(**_DB_NAMESPACE)
 
-    attrs = [_RECORD_ID, _TXT_RECORD]
-    return (dict(zip(attrs, record)) for record in self._sql(query))
+    return (OrderedDict(zip(self.txt_header(), record)) for record in self._sql(query))
+
+  def txt_header(self):
+    return [_RECORD_ID, _TXT_RECORD]
 
   # @output := {record_id: rid, txt_record: txt_r}
   def unlabeled_sample(self, n):
@@ -203,8 +205,17 @@ class Project:
 
     query = query.format(limit=n, **_DB_NAMESPACE)
 
-    attrs = [_RECORD_ID, _TXT_RECORD]
-    return (dict(zip(attrs, record)) for record in self._sql(query))
+    return (OrderedDict(zip(self.unlabeled_header(), record)) for record in self._sql(query))
+
+  def unlabeled_header(self):
+    return [_RECORD_ID, _TXT_RECORD]
+
+  def labels_so_far(self):
+    so_far = {record[_RECORD_ID]: record for record in self.txt()}
+    for training_example in self.training_examples():
+      rid = training_example[_RECORD_ID]
+      so_far[rid].update(training_example)
+    return so_far.values()
 
   # @output := {record_id: rid, txt_record: txt_r, *fields: *artificial_extract}
   def training_examples(self):
@@ -213,11 +224,13 @@ class Project:
             ' FROM {txt},{labels}'
             ' WHERE {txt}.{record_id}={labels}.{record_id}')
 
-    all_fields = self._all_fields()
-    query = query.format(all_fields=','.join(all_fields), **_DB_NAMESPACE)
+    query = query.format(all_fields=','.join(self._all_fields()), **_DB_NAMESPACE)
 
-    attrs = [_RECORD_ID, _TXT_RECORD] + all_fields
-    return (dict(zip(attrs, record)) for record in self._sql(query))
+    return (OrderedDict(zip(self.training_header(), record)) for record in self._sql(query))
+
+  def training_header(self):
+    all_fields = self._all_fields()
+    return [_RECORD_ID, _TXT_RECORD] + all_fields
 
   # @output := {record_id: rid, txt_record: txt_r, confidence: c, *fields: *impure_extract}
   def raw_extractions(self):
@@ -226,14 +239,18 @@ class Project:
             ' FROM {txt},{raw_extractions}'
             ' WHERE {txt}.{record_id}={raw_extractions}.{record_id}')
 
-    all_fields = self._all_fields()
-    query = query.format(all_fields=','.join(all_fields), **_DB_NAMESPACE)
+    query = query.format(all_fields=','.join(self._all_fields()), **_DB_NAMESPACE)
 
-    attrs = [_RECORD_ID, _TXT_RECORD, _CONFIDENCE] + all_fields
-    pkl_maps = (dict(zip(attrs, pkl_record)) for pkl_record in self._sql(query))
+    pkl_maps = (
+        OrderedDict(zip(self.raw_header(), pkl_record))
+        for pkl_record in self._sql(query)
+    )
 
     record_maps = (self._unpkl(pkl_map) for pkl_map in pkl_maps)
     return record_maps
+
+  def raw_header(self):
+    return [_RECORD_ID, _TXT_RECORD, _CONFIDENCE] + self._all_fields()
 
   # @output := {record_id: rid, txt_record: txt_r, confidence: c, *fields: *pure_extract}
   def refined_extractions(self, sql):
@@ -242,21 +259,22 @@ class Project:
             ' FROM {txt},{refined_extractions}'
             ' WHERE {txt}.{record_id}={refined_extractions}.{record_id}')
 
-    all_fields = self._all_fields
-    query = query.format(all_fields=','.join(all_fields), **_DB_NAMESPACE)
+    query = query.format(all_fields=','.join(self._all_fields()), **_DB_NAMESPACE)
 
-    attrs = [_RECORD_ID, _TXT_RECORD, _CONFIDENCE] + all_fields
-    return (dict(zip(attrs, record)) for record in self._sql(query))
+    return (OrderedDict(zip(self._all_fields(), record)) for record in self._sql(query))
+
+  def refined_header(self):
+    return [_RECORD_ID, _TXT_RECORD, _CONFIDENCE] + self._all_fields()
 
 # save data
 ###########
 
   # @input training_examples := {record_id: rid, *fields: *artificial_extract}
-  def add_training_examples(self, training_examples):
+  def update_training_examples(self, training_examples):
     '''''' # TODO
     with self._db.cursor() as cur:
       for training_example in training_examples:
-        cur.execute(*self._db.insert(_LABELS, training_example))
+        cur.execute(*self._db.insert_or_replace(_LABELS, training_example))
 
 # perform computation
 #####################
@@ -310,10 +328,9 @@ class Project:
 
   # TODO warn if we see any records that have more than 1 match
   def _multiple_match(self, extract_map):
-    all_fields = self.info.fields | self.info.aux_fields
     mm = {}
     for attr, extract in extract_map.iteritems():
-      if attr in all_fields and extract is not None and len(extract) > 1:
+      if attr in self._all_fields() and extract is not None and len(extract) > 1:
         mm[attr] = extract
     return mm
 
@@ -333,7 +350,7 @@ class Project:
       return pickle.load(f)
 
   def _all_fields(self):
-    return list(self.info.fields | self.info.aux_fields)
+    return self.info.fields + self.info.aux_fields
 
   def _sql(self, query, params=()):
     with self._db.cursor() as cur:
@@ -346,18 +363,18 @@ class Project:
       cur.execute(*self._db.create_table(_TXT, [
           (_RECORD_ID, _RECORD_ID_TYPE),
           (_TXT_RECORD, _TXT_RECORD_TYPE)
-      ]))
+      ], primary_key=_RECORD_ID))
       cur.execute(*self._db.create_table(_LABELS, [
           (_RECORD_ID, _RECORD_ID_TYPE)
-      ]))
+      ], primary_key=_RECORD_ID))
       cur.execute(*self._db.create_table(_RAW_EXTRACTIONS, [
           (_RECORD_ID, _RECORD_ID_TYPE),
           (_CONFIDENCE, _CONFIDENCE_TYPE)
-      ]))
+      ], primary_key=_RECORD_ID))
       cur.execute(*self._db.create_table(_REFINED_EXTRACTIONS, [
           (_RECORD_ID, _RECORD_ID_TYPE),
           (_CONFIDENCE, _CONFIDENCE_TYPE)
-      ]))
+      ], primary_key=_RECORD_ID))
 
   def _ingest(self, f):
     txt_record_maps = ({_RECORD_ID: line_no, _TXT_RECORD: line} for line_no, line in enumerate(f))

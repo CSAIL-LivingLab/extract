@@ -32,10 +32,13 @@ class MapDB:
 
   # SQL synthesis
 
-  def create_table(self, tablename, columns):
+  def create_table(self, tablename, columns, primary_key=None):
     column_defs = ['{} {}'.format(col_name, col_type) for col_name, col_type in columns]
-    create_table = 'CREATE TABLE {tablename} ({columns})'.format(tablename=tablename,
+    create_table = 'CREATE TABLE {tablename} ({columns}'.format(tablename=tablename,
         columns=','.join(column_defs))
+    if primary_key:
+      create_table += ', PRIMARY KEY({})'.format(primary_key)
+    create_table += ')'
     return create_table, ()
 
   def drop_table(self, tablename):
@@ -60,4 +63,13 @@ class MapDB:
         columns=','.join(attrs),
         values=','.join(value_placeholders))
     return insert, record
+
+  def insert_or_replace(self, tablename, record_map):
+    attrs, record = record_map.keys(), record_map.values()
+    value_placeholders = ['?'] * len(attrs)
+    i_or_r = "INSERT OR REPLACE INTO {tablename} ({columns}) VALUES ({values})".format(
+        tablename=tablename,
+        columns=','.join(attrs),
+        values=','.join(value_placeholders))
+    return i_or_r, record
 

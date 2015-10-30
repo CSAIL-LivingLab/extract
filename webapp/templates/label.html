@@ -1,0 +1,52 @@
+{% extends "layout.html" %}
+{% set active_page = 'label' %}
+
+{% block head %}
+<link href="{{ url_for('static', filename='css/label.css') }}" rel="stylesheet" media="screen">
+{% endblock %}
+
+{% block body %}
+
+  <div class="jumbotron">
+    <h1>Label training samples</h1>
+  </div>
+
+  <form action="/api/update_training_examples" method="post">
+    <div class="row">
+      <table class="table">
+        <thead>
+          <tr>
+            {% for attribute in header %}
+              <th>{{ attribute }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for record in labels_so_far %}
+            <tr>
+              {% for field in header %}
+                <td>
+                  {% if field in all_fields %}
+                    <input type="text" name="{{ record['record_id'] }}-{{ field }}"
+                        {% if record.get(field, None) is none %} placeholder="{{ field }}"
+                        {% else %} value="{{ record[field] }}"
+                        {% endif %}
+                    >
+                  {% else %}
+                    {{ record.get(field, None) }}
+                  {% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="row">
+      <label class="btn btn-primary">
+        Save labels
+        <input type="submit">
+      </label>
+    </div>
+  </form>
+{% endblock %}

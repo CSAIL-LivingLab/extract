@@ -1,0 +1,7 @@
+label input[type="submit"] {
+  display: none !important;
+}
+
+label input[type="file"] {
+  display: none !important;
+}

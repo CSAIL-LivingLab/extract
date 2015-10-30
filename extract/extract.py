@@ -28,7 +28,6 @@ class FieldExtractor:
     self._custom_tokens = custom_tokens
 
     self._lexer = Lexer(DEFAULT_TOKEN_DEFS, custom_types=custom_tokens)
-
     self._hmm = HMM(self._states(), self._outputs())
 
   def learn(self, training_examples, smoothing=0):
@@ -53,6 +52,7 @@ class FieldExtractor:
     y_tokens = {
         field: self._lexer.tokenize(extract, stop=False)
         for field, extract in extraction_example.iteritems()
+        if extract
     }
     y = _label(x_tokens, y_tokens, connections=self._connections)
 
@@ -182,11 +182,10 @@ def _label(x_tokens, y_tokens, connections={}):
 
   # fill in gaps with corresponding connections
   for gap in _gaps(labels):
-    start, stop = gap.start, gap.end
-    from_state = labels[start - 1]
-    to_state = labels[stop]
+    from_state = labels[gap.start - 1]
+    to_state = labels[gap.end]
     if to_state in connections.get(from_state, set()):
-      labels[start:stop] = [_connection(from_state, to_state)] * (stop - start)
+      labels[gap.start:gap.end] = [_connection(from_state, to_state)] * (gap.end - gap.start)
   return labels
 
 def _gaps(labels):

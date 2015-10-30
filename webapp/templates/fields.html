@@ -1,0 +1,56 @@
+{% extends "layout.html" %}
+{% set active_page = 'fields' %}
+
+{% block body %}
+  <div class="panel panel-default">
+    <div class="panel-heading">
+      <h4>Fields</h3>
+    </div>
+    <div class="panel-body">
+      <div class="row">
+
+        <form class="form form-inline" action="/api/add_fields" method="post" enctype="multipart/form-data">
+          <div class="col-md-8">
+            <input class="form-control" name="fields" type="text" placeholder="Field names (csv)">
+          </div>
+          <div class="col-md-4">
+            <label class="btn btn-primary">
+              Add Fields
+              <input type="submit">
+            </label>
+          </div>
+        </form>
+
+      </div>
+      <div class="row">
+        <ul class="list-inline">
+          {% for field in info.fields %}
+            <li><h3><span class="label label-default">{{ field }}</span></h3></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+  <hr>
+  <h2>Sample data</h2>
+  <div class="row">
+    <table class="table">
+      <thead>
+        <tr>
+          {% for attribute in header %}
+            <th>{{ attribute }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for record in txt_sample %}
+          <tr>
+            {% for value in record.values() %}
+              <td>{{ value }}</td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

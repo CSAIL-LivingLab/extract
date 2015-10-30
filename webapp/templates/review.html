@@ -1,0 +1,19 @@
+{% from 'macros.html' import table %}
+
+{% extends "layout.html" %}
+{% set active_page='review' %}
+
+{% block head %}
+{% endblock %}
+
+{% block body %}
+  <form class="form" action="/api/extract" method="post">
+    <label class="btn btn-primary">
+      Extract!
+      <input type="submit">
+    </label>
+  </form>
+  {% if extractions %}
+    {{ table(header, extractions) }}
+  {% endif %}
+{% endblock %}
