@@ -61,7 +61,7 @@
     <tbody>
     {% for row in rows %}
       <tr>
-        {% for field in row %}
+        {% for field in row.itervalues() %}
           <td>{{ field }}</td>
         {% endfor %}
       </tr>

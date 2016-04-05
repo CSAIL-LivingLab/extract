@@ -15,15 +15,20 @@ if __name__ == '__main__':
 
   fe = FieldExtractor(fields)
 
-  print len(training_txt_records)
-  print len(training_txt_labels)
-  print zip(training_txt_records, training_txt_labels)[:5]
+  # 
+  # print len(training_txt_records)
+  # print len(training_txt_labels)
+  # print zip(training_txt_records, training_txt_labels)[:5]
+
+  # smoothing allows some guessing. lookup additive smoothing
   fe.learn(zip(training_txt_records, training_txt_labels), smoothing=1e-3)
 
   ## uncomment below to display matrices for hmm
-  print fe._hmm.start_p
-  print fe._hmm.trans_p
-  print fe._hmm.emit_p
+  ## should not be even (obvi?)
+  # print fe._hmm.start_p
+  # print fe._hmm.trans_p
+  # print fe._hmm.emit_p
+
 
   for test_txt_record in test_txt_records:
     print fe.extract(test_txt_record)

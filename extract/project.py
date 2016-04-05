@@ -247,7 +247,6 @@ class Project:
     )
 
     record_maps = (self._unpkl(pkl_map) for pkl_map in pkl_maps)
-    import pdb; pdb.set_trace()
     return record_maps
 
   def raw_header(self):

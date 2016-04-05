@@ -62,3 +62,6 @@ No known bugs
 AL NOTES
 --------
 $ python run.py .
+
+extract.py is the library api (stateless)
+project.py adds a db to it (or tries to or something)
