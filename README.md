@@ -57,3 +57,8 @@ TODO
 BUGS
 ----
 No known bugs
+
+
+AL NOTES
+--------
+$ python run.py .

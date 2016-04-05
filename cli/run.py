@@ -15,12 +15,16 @@ if __name__ == '__main__':
 
   fe = FieldExtractor(fields)
 
-  fe.train(training_txt_records, training_txt_labels)
+  print len(training_txt_records)
+  print len(training_txt_labels)
+  print zip(training_txt_records, training_txt_labels)[:5]
+  fe.learn(zip(training_txt_records, training_txt_labels), smoothing=1e-3)
 
   ## uncomment below to display matrices for hmm
-  #print fe.hmm.start_p
-  #print fe.hmm.trans_p
-  #print fe.hmm.emit_p
+  print fe._hmm.start_p
+  print fe._hmm.trans_p
+  print fe._hmm.emit_p
 
-  print fe.extract(test_txt_records)
+  for test_txt_record in test_txt_records:
+    print fe.extract(test_txt_record)
 
