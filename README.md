@@ -56,12 +56,14 @@ TODO
 
 BUGS
 ----
-No known bugs
+No known bugs (ha)
 
 
 AL NOTES
 --------
+$ cd cli
 $ python run.py .
 
 extract.py is the library api (stateless)
 project.py adds a db to it (or tries to or something)
+query doesn't do anything in the webapp
